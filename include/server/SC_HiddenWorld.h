@@ -108,6 +108,7 @@ struct HiddenWorld
 
 	SC_Semaphore* mQuitProgram;
 	bool mTerminating;
+	int mExitCode;
 
 #ifndef NO_LIBSNDFILE
 	SNDFILE *mNRTInputFile;
@@ -132,6 +133,13 @@ typedef struct HiddenWorld HiddenWorld;
 inline SC_AudioDriver *AudioDriver(World *inWorld)
 {
 	return inWorld->hw->mAudioDriver;
+}
+
+inline void WorldQuit(World* inWorld, int exitCode)
+{
+	inWorld->hw->mTerminating = true;
+	inWorld->hw->mExitCode = exitCode;
+	inWorld->hw->mQuitProgram->Release();
 }
 
 #endif

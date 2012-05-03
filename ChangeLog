@@ -19,6 +19,7 @@ User-visible changes (started after 3.4)
 * Demand sets done flag (to be used by Done.kr or FreeSelfWhenDone.kr) - jli
 * Warn when extensions overwrites methods in main class lib, unless put in SystemOverwrites folder - jli
 * New cross-platform filesystem utilities: File.copy, .mtime, .mkdir, .realpath, .type, .fileSize - jli
+* API: Return exit code from World_WaitForQuit
 
 Bugfixes:
 ---------

@@ -358,7 +358,7 @@ int main(int argc, char* argv[])
 	}
 	fflush(stdout);
 
-	World_WaitForQuit(world);
+	int exitCode = World_WaitForQuit(world);
 
 
 #ifdef _WIN32
@@ -371,6 +371,6 @@ int main(int argc, char* argv[])
 #endif // SC_WIN32_STATIC_PTHREADS
 #endif // _WIN32
 
-	return 0;
+	return exitCode;
 }
 

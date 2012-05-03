@@ -106,7 +106,7 @@ SC_DLLEXPORT_C void World_Cleanup(struct World *inWorld);
 SC_DLLEXPORT_C void World_NonRealTimeSynthesis(struct World *inWorld, struct WorldOptions *inOptions);
 SC_DLLEXPORT_C int World_OpenUDP(struct World *inWorld, int inPort);
 SC_DLLEXPORT_C int World_OpenTCP(struct World *inWorld, int inPort, int inMaxConnections, int inBacklog);
-SC_DLLEXPORT_C void World_WaitForQuit(struct World *inWorld);
+SC_DLLEXPORT_C int World_WaitForQuit(struct World *inWorld);
 SC_DLLEXPORT_C bool World_SendPacket(struct World *inWorld, int inSize, char *inData, ReplyFunc inFunc);
 SC_DLLEXPORT_C bool World_SendPacketWithContext(struct World *inWorld, int inSize, char *inData, ReplyFunc inFunc, void *inContext);
 SC_DLLEXPORT_C int World_CopySndBuf(struct World *world, uint32 index, struct SndBuf *outBuf, bool onlyIfChanged, bool *didChange);

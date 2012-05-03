@@ -299,6 +299,7 @@ SC_DLLEXPORT_C World* World_New(WorldOptions *inOptions)
 		world->hw->mAllocPool = new AllocPool(malloc, free, inOptions->mRealTimeMemorySize * 1024, 0);
 		world->hw->mQuitProgram = new SC_Semaphore(0);
 		world->hw->mTerminating = false;
+		world->hw->mExitCode = 0;
 
 		extern Malloc gMalloc;
 
@@ -700,15 +701,18 @@ Bail:
 }
 #endif   // !NO_LIBSNDFILE
 
-SC_DLLEXPORT_C void World_WaitForQuit(struct World *inWorld)
+SC_DLLEXPORT_C int World_WaitForQuit(struct World *inWorld)
 {
+	int exitCode = 1;
 	try {
 		inWorld->hw->mQuitProgram->Acquire();
+		exitCode = inWorld->hw->mExitCode;
 		World_Cleanup(inWorld);
 	} catch (std::exception& exc) {
 		scprintf("Exception in World_WaitForQuit: %s\n", exc.what());
 	} catch (...) {
 	}
+	return exitCode;
 }
 
 void World_SetSampleRate(World *inWorld, double inSampleRate)
