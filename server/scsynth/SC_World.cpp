@@ -703,14 +703,16 @@ Bail:
 
 SC_DLLEXPORT_C int World_WaitForQuit(struct World *inWorld)
 {
-	int exitCode = 1;
+	int exitCode = 0;
 	try {
 		inWorld->hw->mQuitProgram->Acquire();
 		exitCode = inWorld->hw->mExitCode;
 		World_Cleanup(inWorld);
 	} catch (std::exception& exc) {
 		scprintf("Exception in World_WaitForQuit: %s\n", exc.what());
+		exitCode = 1;
 	} catch (...) {
+		exitCode = 1;
 	}
 	return exitCode;
 }
