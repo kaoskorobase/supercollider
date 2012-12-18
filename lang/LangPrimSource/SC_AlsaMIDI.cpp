@@ -52,8 +52,6 @@ PyrSymbol* s_midiSysexAction;
 PyrSymbol* s_midiSysrtAction;
 PyrSymbol* s_midiSMPTEAction;
 
-static int g_ivx_MIDIOut_port;
-
 const int kMaxMidiPorts = 16;
 bool gMIDIInitialized = false;
 
@@ -125,9 +123,10 @@ struct SC_AlsaMidiPort
 {
 	SC_AlsaMidiPort()
 		: uid(0)
-	{ *name = 0; }
+	{ *name = 0; *device = 0; }
 
 	char		name[kAlsaMaxPortNameLen];
+	char		device[kAlsaMaxPortNameLen];
 	int32		uid;
 };
 
@@ -246,8 +245,18 @@ void SC_AlsaMidiClient::processEvent(snd_seq_event_t* evt)
 				runInterpreter(g, s_midiSysrtAction, 4);
 				break;
 			// system realtime events
+			case SND_SEQ_EVENT_TUNE_REQUEST:	// tuning request
+				++g->sp; SetInt(g->sp, 0x6);
+				++g->sp; SetInt(g->sp, 0);
+				runInterpreter(g, s_midiSysrtAction, 4);
+				break;
 			case SND_SEQ_EVENT_CLOCK:			// clock
 				++g->sp; SetInt(g->sp, 0x8);
+				++g->sp; SetInt(g->sp, 0);
+				runInterpreter(g, s_midiSysrtAction, 4);
+				break;
+			case SND_SEQ_EVENT_TICK:			// tick
+				++g->sp; SetInt(g->sp, 0x9);
 				++g->sp; SetInt(g->sp, 0);
 				runInterpreter(g, s_midiSysrtAction, 4);
 				break;
@@ -674,7 +683,8 @@ int listMIDIEndpoints(struct VMGlobals *g, PyrSlot* a)
 			if (SC_AlsaCheckPerm(pinfo, SND_SEQ_PORT_CAP_READ|SND_SEQ_PORT_CAP_SUBS_READ)) {
 				// src port
 				srcPorts.push_back(SC_AlsaMidiPort());
-				snprintf(srcPorts.back().name, kAlsaMaxPortNameLen, "%s-%s", cname, pname);
+				snprintf(srcPorts.back().name, kAlsaMaxPortNameLen, "%s", pname);
+				snprintf(srcPorts.back().device, kAlsaMaxPortNameLen, "%s", cname);
 				srcPorts.back().uid = SC_AlsaMakeUID(cid, pid);
 				//post("MIDI (ALSA): src %s-%s %d:%d %u\n", cname, pname, cid, pid, srcPorts.back().uid);
 			}
@@ -682,7 +692,8 @@ int listMIDIEndpoints(struct VMGlobals *g, PyrSlot* a)
 			if (SC_AlsaCheckPerm(pinfo, SND_SEQ_PORT_CAP_WRITE|SND_SEQ_PORT_CAP_SUBS_WRITE)) {
 				// dst port
 				dstPorts.push_back(SC_AlsaMidiPort());
-				snprintf(dstPorts.back().name, kAlsaMaxPortNameLen, "%s-%s", cname, pname);
+				snprintf(dstPorts.back().name, kAlsaMaxPortNameLen, "%s", pname);
+				snprintf(dstPorts.back().device, kAlsaMaxPortNameLen, "%s", cname);
 				dstPorts.back().uid = SC_AlsaMakeUID(cid, pid);
 				//post("MIDI (ALSA): dst %s-%s %d:%d %u\n", cname, pname, cid, pid, srcPorts.back().uid);
 			}
@@ -721,14 +732,15 @@ int listMIDIEndpoints(struct VMGlobals *g, PyrSlot* a)
 
 
     for (int i=0; i<numSrc; ++i) {
-		char* name = srcPorts[i].name;
+	char* name = srcPorts[i].name;
+	char* devicename = srcPorts[i].device;
 
         PyrString *string = newPyrString(g->gc, name, 0, true);
         SetObject(namearraySo->slots+i, string);
         namearraySo->size++;
         g->gc->GCWrite(namearraySo, (PyrObject*)string);
 
-        PyrString *devstring = newPyrString(g->gc, name, 0, true);
+        PyrString *devstring = newPyrString(g->gc, devicename, 0, true);
         SetObject(devarraySo->slots+i, devstring);
         devarraySo->size++;
         g->gc->GCWrite(devarraySo, (PyrObject*)devstring);
@@ -738,13 +750,14 @@ int listMIDIEndpoints(struct VMGlobals *g, PyrSlot* a)
     }
 
     for (int i=0; i<numDst; ++i) {
-		char* name = dstPorts[i].name;
+	char* name = dstPorts[i].name;
+	char* devicename = dstPorts[i].device;
 
         PyrString *string = newPyrString(g->gc, name, 0, true);
         SetObject(namearrayDe->slots+namearrayDe->size++, string);
         g->gc->GCWrite(namearrayDe, (PyrObject*)string);
 
-        PyrString *devstring = newPyrString(g->gc, name, 0, true);
+        PyrString *devstring = newPyrString(g->gc, devicename, 0, true);
         SetObject(devarrayDe->slots+i, devstring);
 		devarrayDe->size++;
         g->gc->GCWrite(devarrayDe, (PyrObject*)devstring);
@@ -970,7 +983,6 @@ int prSendMIDIOut(struct VMGlobals *g, int numArgsPushed)
 	return sendMIDI(outputIndex, uid, length, hiStatus, loStatus, aval, bval, late);
 }
 
-int prSendSysex(VMGlobals *g, int numArgsPushed);
 int prSendSysex(VMGlobals *g, int numArgsPushed)
 {
 	int err, uid, outputIndex;
@@ -979,7 +991,9 @@ int prSendSysex(VMGlobals *g, int numArgsPushed)
 	// rcvr, uid, packet
 	PyrSlot* args = g->sp - 2;
 
-	err = slotIntVal(slotRawObject(args)->slots + g_ivx_MIDIOut_port, &outputIndex);
+	int MIDIOut_port_index = instVarOffset("MIDIOut", "port");
+
+	err = slotIntVal(slotRawObject(args)->slots + MIDIOut_port_index, &outputIndex);
 	if (err) return err;
 
 	err = slotIntVal(args+1, &uid);
@@ -1013,8 +1027,6 @@ void initMIDIPrimitives()
 	s_midiSysexAction = getsym("doSysexAction");
 	s_midiSysrtAction = getsym("doSysrtAction");
 	s_midiSMPTEAction = getsym("doSMPTEaction");
-
-	g_ivx_MIDIOut_port = instVarOffset("MIDIOut", "port");
 
 	definePrimitive(base, index++, "_InitMIDI", prInitMIDI, 3, 0);
 	definePrimitive(base, index++, "_InitMIDIClient", prInitMIDIClient, 1, 0);

@@ -298,7 +298,7 @@ int prString_Regexp(struct VMGlobals *g, int numArgsPushed)
 
 	using namespace boost;
 
-	int err, start, end, ret, len;
+	int start, end, len;
 
 	PyrSlot *a = g->sp - 3;
 	PyrSlot *b = g->sp - 2;
@@ -368,7 +368,6 @@ static int prString_FindRegexp(struct VMGlobals *g, int numArgsPushed)
 
 	int offset = slotRawInt(c);
 	int stringlen = std::max(slotRawObject(a)->size - offset, 0);
-	int patternsize =  slotRawObject(b)->size + 1;
 
 	std::vector<sc_regexp_match> matches;
 	const char* const stringBegin = slotRawString(a)->s + offset;
@@ -604,7 +603,16 @@ int prString_Getenv(struct VMGlobals* g, int /* numArgsPushed */)
 	err = slotStrVal(arg, key, 256);
 	if (err) return err;
 
+#ifdef _WIN32
+	char buf[1024];
+	DWORD size = GetEnvironmentVariable(key, buf, 1024);
+	if (size == 0 || size > 1024)
+		value = 0;
+	else
+		value = buf;
+#else
 	value = getenv(key);
+#endif
 
 	if (value) {
 		PyrString* pyrString = newPyrString(g->gc, value, 0, true);

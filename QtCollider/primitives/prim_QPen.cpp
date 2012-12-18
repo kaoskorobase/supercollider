@@ -23,7 +23,8 @@
 
 #include "primitives.h"
 #include "../painting.h"
-#include "../Slot.h"
+#include "../type_codec.hpp"
+#include "PyrKernel.h"
 
 #include <QPainter>
 #include <QVector2D>
@@ -145,14 +146,14 @@ QC_QPEN_PRIMITIVE( QPen_Clear, 0, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 
 QC_QPEN_PRIMITIVE( QPen_FillColor, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QColor color = Slot::toColor( a );
+  QColor color = QtCollider::get( a );
   painter->setBrush( color );
   return errNone;
 }
 
 QC_QPEN_PRIMITIVE( QPen_StrokeColor, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QColor color = Slot::toColor( a );
+  QColor color = QtCollider::get( a );
   QPen pen = painter->pen();
   pen.setColor( color );
   painter->setPen( pen );
@@ -171,7 +172,7 @@ QC_QPEN_PRIMITIVE( QPen_Width, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 
 QC_QPEN_PRIMITIVE( QPen_SetJoinStyle, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  int style = Slot::toInt(a);
+  int style = QtCollider::get(a);
   QPen pen = painter->pen();
 
   switch( style ) {
@@ -192,7 +193,7 @@ QC_QPEN_PRIMITIVE( QPen_SetJoinStyle, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 
 QC_QPEN_PRIMITIVE( QPen_SetCapStyle, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  int style = Slot::toInt(a);
+  int style = QtCollider::get(a);
   QPen pen = painter->pen();
 
   switch( style ) {
@@ -240,7 +241,7 @@ QC_QPEN_PRIMITIVE( QPen_SetDashPattern, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g 
 
 QC_QPEN_PRIMITIVE( QPen_SetOpacity, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  float opacity = Slot::toFloat(a);
+  float opacity = QtCollider::get(a);
   painter->setOpacity( opacity );
   return errNone;
 }
@@ -262,7 +263,7 @@ QC_QPEN_PRIMITIVE( QPen_AntiAliasing, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 
 QC_QPEN_PRIMITIVE( QPen_SetFont, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  painter->setFont( Slot::toFont( a ) );
+  painter->setFont( QtCollider::get( a ) );
   return errNone;
 }
 
@@ -307,58 +308,77 @@ QC_QPEN_PRIMITIVE( QPen_Rotate, 3, PyrSlot *r, PyrSlot *a, VMGlobals *g )
   return errNone;
 }
 
-QC_QPEN_PRIMITIVE( QPen_Transform, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
+QC_QPEN_PRIMITIVE( QPen_SetTransform, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  VariantList list = Slot::toVariantList( a );
-  if( list.data.count() < 6 ) return errWrongType;
+  QVariantList list = QtCollider::get( a );
+  if( list.count() < 6 ) return errWrongType;
   float f[6];
   int i = 6;
   while( i ) {
     --i;
-    QVariant var = list.data[i];
+    const QVariant & var = list[i];
     if( !var.canConvert( QVariant::Double ) ) return errWrongType;
-    f[i] = list.data[i].value<float>();
+    f[i] = var.value<float>();
   }
   QTransform transform( f[0], f[1], f[2], f[3], f[4], f[5] );
-  painter->setWorldTransform( transform );
+  painter->setWorldTransform( transform, true );
   return errNone;
+}
+
+QC_QPEN_PRIMITIVE( QPen_Transform, 0, PyrSlot *r, PyrSlot *a, VMGlobals *g )
+{
+    const QTransform & transform = painter->worldTransform();
+
+    PyrDoubleArray *doubleArray = newPyrDoubleArray( g->gc, 6, 0, true );
+    SetObject( r, doubleArray );
+
+    double *val = doubleArray->d;
+    val[0] = transform.m11();
+    val[1] = transform.m12();
+    val[2] = transform.m21();
+    val[3] = transform.m22();
+    val[4] = transform.dx();
+    val[5] = transform.dy();
+    doubleArray->size = 6;
+
+    return errNone;
 }
 
 QC_QPEN_PRIMITIVE( QPen_MoveTo, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QPointF point = Slot::toPoint( a );
+  QPointF point = QtCollider::get( a );
   path.moveTo( point );
   return errNone;
 }
 
 QC_QPEN_PRIMITIVE( QPen_LineTo, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QPointF point = Slot::toPoint( a );
+  QPointF point = QtCollider::get( a );
   path.lineTo( point );
   return errNone;
 }
 
 QC_QPEN_PRIMITIVE( QPen_CubicTo, 3, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QPointF endPoint = Slot::toPoint( a );
-  QPointF cPoint1 = Slot::toPoint( a+1 );
-  QPointF cPoint2 = Slot::toPoint( a+2 );
+  QPointF endPoint = QtCollider::get( a );
+  QPointF cPoint1 = QtCollider::get( a+1 );
+  QPointF cPoint2 = QtCollider::get( a+2 );
   path.cubicTo( cPoint1, cPoint2, endPoint );
   return errNone;
 }
 
 QC_QPEN_PRIMITIVE( QPen_QuadTo, 2, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QPointF endPoint = Slot::toPoint( a );
-  QPointF cPoint = Slot::toPoint( a+1 );
+  QPointF endPoint = QtCollider::get( a );
+  QPointF cPoint = QtCollider::get( a+1 );
   path.quadTo( cPoint, endPoint );
   return errNone;
 }
 
 QC_QPEN_PRIMITIVE( QPen_ArcTo, 3, PyrSlot *r, PyrSlot *arg, VMGlobals *g )
 {
-  QPointF pt1 = Slot::toPoint( arg );
-  QPointF pt2 = Slot::toPoint( arg+1 );
+  QPointF pt1 = QtCollider::get( arg );
+  QPointF pt2 = QtCollider::get( arg+1 );
   float radius;
   if( slotFloatVal( arg+2, &radius ) ) return errWrongType;
   radius = qMax( 0.f, radius );
@@ -400,7 +420,7 @@ QC_QPEN_PRIMITIVE( QPen_ArcTo, 3, PyrSlot *r, PyrSlot *arg, VMGlobals *g )
 
 QC_QPEN_PRIMITIVE( QPen_AddRect, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QRectF rect = Slot::toRect( a );
+  QRectF rect = QtCollider::get( a );
   path.addRect( rect );
   return errNone;
 }
@@ -410,7 +430,7 @@ QC_QPEN_PRIMITIVE( QPen_AddRoundedRect, 3, PyrSlot *r, PyrSlot *a, VMGlobals *g 
   float radiusX, radiusY;
   QRectF rect;
 
-  rect = Slot::toRect( a );
+  rect = QtCollider::get( a );
   if( slotFloatVal( a+1, &radiusX ) ) return errWrongType;
   if( slotFloatVal( a+2, &radiusY ) ) return errWrongType;
 
@@ -420,14 +440,14 @@ QC_QPEN_PRIMITIVE( QPen_AddRoundedRect, 3, PyrSlot *r, PyrSlot *a, VMGlobals *g 
 
 QC_QPEN_PRIMITIVE( QPen_AddEllipse, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QRectF rect = Slot::toRect( a );
+  QRectF rect = QtCollider::get( a );
   path.addEllipse( rect );
   return errNone;
 }
 
 QC_QPEN_PRIMITIVE( QPen_AddArc, 4, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QPointF center = Slot::toPoint( a );
+  QPointF center = QtCollider::get( a );
   float radius, startAngle, arcAngle;
   if( slotFloatVal( a+1, &radius ) ) return errWrongType;
   if( slotFloatVal( a+2, &startAngle ) ) return errWrongType;
@@ -449,7 +469,7 @@ QC_QPEN_PRIMITIVE( QPen_AddArc, 4, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 
 QC_QPEN_PRIMITIVE( QPen_AddWedge, 4, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QPointF center = Slot::toPoint( a );
+  QPointF center = QtCollider::get( a );
   float radius, startAngle, sweepLength;
   if( slotFloatVal( a+1, &radius ) ) return errWrongType;
   if( slotFloatVal( a+2, &startAngle ) ) return errWrongType;
@@ -465,7 +485,7 @@ QC_QPEN_PRIMITIVE( QPen_AddWedge, 4, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 
 QC_QPEN_PRIMITIVE( QPen_AddAnnularWedge, 5, PyrSlot *, PyrSlot *a, VMGlobals *g )
 {
-  QPointF c = Slot::toPoint( a );
+  QPointF c = QtCollider::get( a );
   float innerRadius, outerRadius, startAngle, arcAngle;
   if( slotFloatVal( a+1, &innerRadius ) ) return errWrongType;
   if( slotFloatVal( a+2, &outerRadius ) ) return errWrongType;
@@ -492,7 +512,7 @@ QC_QPEN_PRIMITIVE( QPen_Draw, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
   if( path.isEmpty() ) return errNone;
 
-  int style = Slot::toInt( a );
+  int style = QtCollider::get( a );
   QPen pen = painter->pen();
   QBrush brush = painter->brush();
 
@@ -505,6 +525,11 @@ QC_QPEN_PRIMITIVE( QPen_Draw, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
     case 3:
     case 4:
     default: ;
+  }
+  if ( style == 1 || style == 4 ) {
+    path.setFillRule( Qt::OddEvenFill );
+  } else {
+    path.setFillRule( Qt::WindingFill );
   }
 
   painter->drawPath( path );
@@ -519,10 +544,10 @@ QC_QPEN_PRIMITIVE( QPen_Draw, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 
 QC_QPEN_PRIMITIVE( QPen_FillAxialGradient, 4, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QPointF pt1 = Slot::toPoint(a+0);
-  QPointF pt2 = Slot::toPoint(a+1);
-  QColor c1 = Slot::toColor(a+2);
-  QColor c2 = Slot::toColor(a+3);
+  QPointF pt1 = QtCollider::get(a+0);
+  QPointF pt2 = QtCollider::get(a+1);
+  QColor c1 = QtCollider::get(a+2);
+  QColor c2 = QtCollider::get(a+3);
 
   QLinearGradient grad( pt1, pt2 );
   grad.setColorAt( 0, c1 );
@@ -546,12 +571,12 @@ QC_QPEN_PRIMITIVE( QPen_FillAxialGradient, 4, PyrSlot *r, PyrSlot *a, VMGlobals 
 
 QC_QPEN_PRIMITIVE( QPen_FillRadialGradient, 6, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QPointF pt1 = Slot::toPoint(a+0);
-  QPointF pt2 = Slot::toPoint(a+1);
-  float r1 = Slot::toFloat(a+2);
-  float r2 = Slot::toFloat(a+3);
-  QColor c1 = Slot::toColor(a+4);
-  QColor c2 = Slot::toColor(a+5);
+  QPointF pt1 = QtCollider::get(a+0);
+  QPointF pt2 = QtCollider::get(a+1);
+  float r1 = QtCollider::get(a+2);
+  float r2 = QtCollider::get(a+3);
+  QColor c1 = QtCollider::get(a+4);
+  QColor c2 = QtCollider::get(a+5);
 
   QRadialGradient grad( pt2, r2, pt1 );
   grad.setColorAt( (r2 > 0 ? r1 / r2 : 0), c1 );
@@ -575,14 +600,14 @@ QC_QPEN_PRIMITIVE( QPen_FillRadialGradient, 6, PyrSlot *r, PyrSlot *a, VMGlobals
 
 QC_QPEN_PRIMITIVE( QPen_StringAtPoint, 4, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QString str = Slot::toString( a );
+  QString str = QtCollider::get( a );
   if( str.isEmpty() ) return errNone;
-  QPointF pt = Slot::toPoint( a+1 );
+  QPointF pt = QtCollider::get( a+1 );
 
   painter->save();
-  if( NotNil( a+2 ) ) painter->setFont( Slot::toFont( a+2 ) );
+  if( NotNil( a+2 ) ) painter->setFont( QtCollider::get( a+2 ) );
   QPen pen( painter->pen() );
-  pen.setColor( NotNil( a+3 ) ? Slot::toColor( a+3 ) : painter->brush().color() );
+  pen.setColor( NotNil( a+3 ) ? QtCollider::get( a+3 ) : painter->brush().color() );
   painter->setPen( pen );
 
   QFont f( painter->font() );
@@ -597,18 +622,18 @@ QC_QPEN_PRIMITIVE( QPen_StringAtPoint, 4, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 
 QC_QPEN_PRIMITIVE( QPen_StringInRect, 5, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QString str = Slot::toString( a );
+  QString str = QtCollider::get( a );
   if( str.isEmpty() ) return errNone;
-  QRectF rect = Slot::toRect( a+1 );
+  QRectF rect = QtCollider::get( a+1 );
 
   painter->save();
-  if( NotNil( a+2 ) ) painter->setFont( Slot::toFont( a+2 ) );
+  if( NotNil( a+2 ) ) painter->setFont( QtCollider::get( a+2 ) );
   QPen pen( painter->pen() );
-  pen.setColor( NotNil( a+3 ) ? Slot::toColor( a+3 ) : painter->brush().color() );
+  pen.setColor( NotNil( a+3 ) ? QtCollider::get( a+3 ) : painter->brush().color() );
   painter->setPen( pen );
 
   Qt::Alignment align;
-  if( NotNil(a+4) ) align = static_cast<Qt::Alignment>( Slot::toInt( a+4 ) );
+  if( NotNil(a+4) ) align = static_cast<Qt::Alignment>( QtCollider::get<int>( a+4 ) );
   else align = Qt::AlignTop | Qt::AlignLeft;
 
   painter->drawText( rect, align, str );
@@ -639,6 +664,7 @@ void defineQPenPrimitives()
   definer.define<QPen_Shear>();
   definer.define<QPen_Rotate>();
   definer.define<QPen_Transform>();
+  definer.define<QPen_SetTransform>();
   definer.define<QPen_MoveTo>();
   definer.define<QPen_LineTo>();
   definer.define<QPen_CubicTo>();

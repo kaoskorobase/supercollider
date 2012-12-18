@@ -104,9 +104,10 @@ SCDocHTMLRenderer {
         var folder = doc.path.dirname;
         var undocumented = false;
         if(folder==".",{folder=""});
-        
+
+        // FIXME: use SCDoc.helpTargetDir relative to baseDir
         baseDir = ".";
-        doc.path.occurrencesOf(Platform.pathSeparator).do {
+        doc.path.occurrencesOf($/).do {
             baseDir = baseDir ++ "/..";
         };
 
@@ -158,7 +159,8 @@ SCDocHTMLRenderer {
             if(currentClass.notNil) {
                 m = currentClass.filenameSymbol.asString;
                 stream << "<div id='filename'>Source: "
-                << m.dirname << "/<a href='file://" << m << "'>" << m.basename << "</a></div>";
+                << m.dirname << "/<a href='" << URI.fromLocalPath(m).asString << "'>"
+                << m.basename << "</a></div>";
                 if(currentClass != Object) {
                     stream << "<div id='superclasses'>"
                     << "Inherits from: "
@@ -197,7 +199,7 @@ SCDocHTMLRenderer {
         };
 
         // FIXME: Remove this when conversion to new help system is done!
-        if(doc.isUndocumentedClass) {
+        if(doc.isUndocumentedClass and: {Help.respondsTo('findHelpFile')}) {
             x = Help.findHelpFile(name);
             x !? {
                 stream << ("[ <a href='" ++ baseDir ++ "/OldHelpWrapper.html#"
@@ -302,7 +304,8 @@ SCDocHTMLRenderer {
             m !? {
                 if(m.isExtensionOf(cls) and: {icls.isNil or: {m.isExtensionOf(icls)}}) {
                     stream << "<div class='extmethod'>From extension in <a href='"
-                    << m.filenameSymbol << "'>" << m.filenameSymbol << "</a></div>\n";
+                    << URI.fromLocalPath(m.filenameSymbol.asString).asString << "'>"
+                    << m.filenameSymbol << "</a></div>\n";
                 } {
                     if(m.ownerClass == icls) {
                         stream << "<div class='supmethod'>From implementing class</div>\n";
@@ -317,13 +320,13 @@ SCDocHTMLRenderer {
                 };
             };
         };
-        
+
         if(methArgsMismatch) {
             "SCDoc: In %\n"
             "  Grouped methods % does not have the same argument signature."
             .format(currDoc.fullPath, names).warn;
         };
-        
+
         // ignore trailing mul add arguments
         if(currentMethod.notNil) {
             currentNArgs = currentMethod.argNames.size;
@@ -334,7 +337,7 @@ SCDocHTMLRenderer {
             }
         } {
             currentNArgs = 0;
-        };    
+        };
 
         if(node.children.size > 1) {
             stream << "<div class='method'>";
@@ -495,7 +498,7 @@ SCDocHTMLRenderer {
                 noParBreak = true;
                 this.renderChildren(stream, node);
             },
-// Methods         
+// Methods
             \CMETHOD, {
                 this.renderMethod (
                     stream, node,
@@ -732,7 +735,7 @@ SCDocHTMLRenderer {
             body.addDivAfter(id, nil, title, l);
         }
     }
-    
+
     *renderClassTree {|stream, cls|
         var name, doc, desc = "";
         name = cls.name.asString;
@@ -764,12 +767,12 @@ SCDocHTMLRenderer {
             stream << "</div>";
         };
     }
-    
+
     *renderFooter {|stream, doc|
         stream << "<div class='doclink'>";
         doc.fullPath !? {
-            stream << "source: <a href='file://"
-            << doc.fullPath << "'>" << doc.fullPath << "</a><br>"
+            stream << "source: <a href='" << URI.fromLocalPath(doc.fullPath).asString << "'>"
+            << doc.fullPath << "</a><br>"
         };
         stream << "link::" << doc.path << "::<br>"
         << "sc version: " << Main.version << "</div>"
@@ -782,7 +785,7 @@ SCDocHTMLRenderer {
         currDoc = doc;
         footNotes = nil;
         noParBreak = false;
-        
+
         if(doc.isClassDoc) {
             currentClass = doc.klass;
             currentImplClass = doc.implKlass;
@@ -797,7 +800,7 @@ SCDocHTMLRenderer {
             currentClass = nil;
             currentImplClass = nil;
         };
-        
+
         this.renderHeader(stream, doc);
         stream << "<div id='toc'>\n";
         this.renderTOC(stream, body);
@@ -807,7 +810,7 @@ SCDocHTMLRenderer {
         this.renderFooter(stream, doc);
         currDoc = nil;
     }
-    
+
     *renderToFile {|filename, doc, root|
         var stream;
         File.mkdir(filename.dirname);

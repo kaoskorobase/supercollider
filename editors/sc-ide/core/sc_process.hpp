@@ -21,142 +21,203 @@
 #ifndef SCIDE_SC_PROCESS_HPP_INCLUDED
 #define SCIDE_SC_PROCESS_HPP_INCLUDED
 
-#include <QAction>
-#include <QProcess>
-#include <QDebug>
+#include "sc_introspection.hpp"
 
-#include "sc_ipc.hpp"
+#include <QAction>
+#include <QByteArray>
+#include <QDateTime>
+#include <QDebug>
+#include <QProcess>
+#include <QThread>
+#include <QUuid>
+#include <QtNetwork/QLocalSocket>
+#include <QtNetwork/QLocalServer>
 
 namespace ScIDE {
 
-class SCProcess:
+namespace Settings { class Manager; }
+class ScIntrospectionParser;
+
+class ScProcess:
     public QProcess
 {
-Q_OBJECT
-    SCIpcServer * mIPC;
+    Q_OBJECT
 
 public:
-    SCProcess( QObject *parent = 0 );
+    ScProcess( Settings::Manager *, QObject * parent );
 
-    enum SCProcessActionRole {
-        StartSCLang = 0,
+    enum ActionRole {
+        ToggleRunning = 0,
+        Start,
+        Stop,
+        Restart,
         RecompileClassLibrary,
-        StopSCLang,
-        RunMain,
         StopMain,
 
-        SCProcessActionCount
+        ActionCount
     };
 
-Q_SIGNALS:
-    void scPost(QString const &);
-    void statusMessage(const QString &);
+    const ScLanguage::Introspection & introspection() { return mIntrospection; }
 
-public slots:
-    void start (void);
-
-    void recompileClassLibrary (void)
+    void sendRequest( const QString &id, const QString &command, const QString &data )
     {
-        if(state() != QProcess::Running) {
-            emit statusMessage("Interpreter is not running!");
-            return;
-        }
+        QString cmd = QString("ScIDE.request(\"%1\",'%2',\"%3\")")
+            .arg(id)
+            .arg(command)
+            .arg(data);
 
-        write("\x18");
+        evaluateCode(cmd, true);
     }
 
-    void runMain(void)
-    {
-        evaluateCode("thisProcess.run", false);
-    }
+    void setActiveDocument(class Document *);
+    void sendActiveDocument();
 
-    void stopMain(void)
-    {
-        evaluateCode("thisProcess.stop", false);
-    }
-
-    void stopLanguage (void)
-    {
-        if(state() != QProcess::Running) {
-            emit statusMessage("Interpreter is not running!");
-            return;
-        }
-
-        closeWriteChannel();
-    }
-
-    void getClassDefinitions(QString const & classname)
-    {
-        QString commandString = QString("ScIDE.getClassDefinitions(%1)").arg(classname);
-        evaluateCode(commandString, true);
-    }
-
-    void onReadyRead(void)
-    {
-        QByteArray out = QProcess::readAll();
-        QString postString = QString::fromUtf8(out);
-        if (postString.endsWith( '\n' ))
-            postString.chop(1);
-        emit scPost(postString);
-    }
-
-    void evaluateCode(QString const & commandString, bool silent = false)
-    {
-        if(state() != QProcess::Running) {
-            emit statusMessage("Interpreter is not running!");
-            return;
-        }
-
-        QByteArray bytesToWrite = commandString.toUtf8();
-        size_t writtenBytes = write(bytesToWrite);
-        if (writtenBytes != bytesToWrite.size()) {
-            emit statusMessage("Error when passing data to interpreter!");
-            return;
-        }
-
-        char commandChar = silent ? '\x1b' : '\x0c';
-
-        write( &commandChar, 1 );
-    }
-
-    QAction *action(SCProcessActionRole role)
+    QAction *action(ActionRole role)
     {
         return mActions[role];
     }
 
+public slots:
+    void toggleRunning();
+    void startLanguage (void);
+    void stopLanguage (void);
+    void restartLanguage (void);
+    void recompileClassLibrary (void);
+    void stopMain(void) { evaluateCode("thisProcess.stop", false); }
+    void evaluateCode(QString const & commandString, bool silent = false);
+
+signals:
+    void scPost(QString const &);
+    void statusMessage(const QString &);
+    void response(const QString & selector, const QString & data);
+    void classLibraryRecompiled();
+    void introspectionAboutToSwap();
+
+private slots:
+    void swapIntrospection (ScLanguage::Introspection *newIntrospection)
+    {
+        emit introspectionAboutToSwap();
+        // LATER: use c++11/std::move
+        mIntrospection = *newIntrospection;
+        delete newIntrospection;
+    }
+    void onNewIpcConnection();
+    void onIpcData();
+    void finalizeConnection();
+    void onProcessStateChanged( QProcess::ProcessState state);
+    void onReadyRead(void);
+
 private:
-    void onSclangStart()
+    void onStart();
+    void onResponse( const QString & selector, const QString & data );
+
+    void prepareActions(Settings::Manager * settings);
+
+    QAction * mActions[ActionCount];
+
+    ScLanguage::Introspection mIntrospection;
+    ScIntrospectionParser *mIntrospectionParser;
+
+    QLocalServer *mIpcServer;
+    QLocalSocket *mIpcSocket;
+    QString mIpcServerName;
+    QByteArray mIpcData;
+
+    QString mCurrentDocumentPath;
+    bool mTerminationRequested;
+    QDateTime mTerminationRequestTime;
+};
+
+class ScRequest : public QObject
+{
+    Q_OBJECT
+public:
+    ScRequest( ScProcess *sc, QObject * parent = 0 ):
+        QObject(parent),
+        mSc(sc)
     {
-        mIPC->onSclangStart();
-        QString command = QString("ScIDE.connect(\"%1\")").arg(mIPC->ideName());
-        evaluateCode ( command, true );
+        connect(mSc, SIGNAL(response(QString,QString)),
+                this, SLOT(onResponse(QString,QString)));
+
+        connect(mSc, SIGNAL(classLibraryRecompiled()),
+                this, SLOT(cancel()));
     }
 
-    void prepareActions(void)
+    void send( const QString & command, const QString & data )
     {
-        QAction * action;
-        mActions[StartSCLang] = action = new QAction(
-            QIcon::fromTheme("system-run"), tr("Start SCLang"), this);
-        connect(action, SIGNAL(triggered()), this, SLOT(start()) );
-
-        mActions[RecompileClassLibrary] = action = new QAction(
-            QIcon::fromTheme("system-reboot"), tr("Recompile Class Library"), this);
-        connect(action, SIGNAL(triggered()), this, SLOT(recompileClassLibrary()) );
-
-        mActions[StopSCLang] = action = new QAction(
-            QIcon::fromTheme("system-shutdown"), tr("Stop SCLang"), this);
-        connect(action, SIGNAL(triggered()), this, SLOT(stopLanguage()) );
-
-        mActions[RunMain] = action = new QAction(
-            QIcon::fromTheme("media-playback-start"), tr("Run Main"), this);
-        connect(action, SIGNAL(triggered()), this, SLOT(runMain()));
-
-        mActions[StopMain] = action = new QAction(
-            QIcon::fromTheme("process-stop"), tr("Stop Main"), this);
-        connect(action, SIGNAL(triggered()), this, SLOT(stopMain()));
+        mId = QUuid::createUuid();
+        mCommand = command;
+        mSc->sendRequest(mId.toString(), command, data);
     }
 
-    QAction * mActions[SCProcessActionCount];
+public slots:
+    void cancel()
+    {
+        mId = QUuid();
+        emit cancelled();
+    }
+
+signals:
+    void response( const QString & command, const QString & data );
+    void cancelled();
+
+private slots:
+    void onResponse( const QString & responseId, const QString & responseData )
+    {
+        if (responseId == mId.toString())
+            emit response(mCommand, responseData);
+    }
+
+private:
+    QString mCommand;
+    QUuid mId;
+    ScProcess *mSc;
+};
+
+class ScIntrospectionParserWorker : public QObject
+{
+    Q_OBJECT
+signals:
+    void done( ScLanguage::Introspection * output );
+private slots:
+    void process( const QString & input );
+
+    void quit()
+    {
+        thread()->quit();
+    }
+};
+
+class ScIntrospectionParser : public QThread
+{
+    Q_OBJECT
+public:
+    ScIntrospectionParser( QObject * parent = 0 ):
+        QThread(parent)
+    {
+        connect(this, SIGNAL(newIntrospectionData(QString)),
+                &mWorker, SLOT(process(QString)), Qt::QueuedConnection);
+        connect(&mWorker, SIGNAL(done(ScLanguage::Introspection*)),
+                this, SIGNAL(done(ScLanguage::Introspection*)), Qt::QueuedConnection);
+        mWorker.moveToThread(this);
+    }
+    ~ScIntrospectionParser()
+    {
+        QMetaObject::invokeMethod(&mWorker, "quit");
+        wait();
+    }
+
+    void process( const QString & introspectionData )
+    {
+        emit newIntrospectionData(introspectionData);
+    }
+
+signals:
+    void newIntrospectionData( const QString & data );
+    void done( ScLanguage::Introspection * );
+
+private:
+    ScIntrospectionParserWorker mWorker;
 };
 
 }

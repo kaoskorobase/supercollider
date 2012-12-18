@@ -28,6 +28,10 @@ METHOD:: items
 	argument::
 		An Array of Strings, each String defining the text to represent an item.
 
+METHOD:: clear
+    note:: Only available in Qt GUI ::
+    Removes all items.
+
 METHOD:: value
 	The index of the currently selected item, or nil when no item is selected.
 
@@ -37,6 +41,9 @@ METHOD:: value
 METHOD:: valueAction
 	Sets link::#-value:: and triggers the link::#-action::.
 
+METHOD:: selection
+	note::Only in Qt GUI::
+	Returns an array of all selected indexes. See also: link::#-selectionMode::.
 
 
 SUBSECTION:: Appearance

@@ -79,20 +79,20 @@ QcGraph::QcGraph() :
   connect( &_model, SIGNAL(removed(QcGraphElement*)), this, SLOT(onElementRemoved(QcGraphElement*)) );
 }
 
-VariantList QcGraph::value() const
+QVariantList QcGraph::value() const
 {
-  VariantList x;
-  VariantList y;
+  QVariantList x;
+  QVariantList y;
   QList<QcGraphElement*> elems = _model.elements();
   Q_FOREACH( QcGraphElement* e, elems ) {
     QPointF val = e->value;
-    x.data.append( val.x() );
-    y.data.append( val.y() );
+    x.append( val.x() );
+    y.append( val.y() );
   }
 
-  VariantList values;
-  values.data.append( QVariant::fromValue<VariantList>(x) );
-  values.data.append( QVariant::fromValue<VariantList>(y) );
+  QVariantList values;
+  values.append( QVariant(x) );
+  values.append( QVariant(y) );
 
   return values;
 }
@@ -108,6 +108,18 @@ int QcGraph::index() const
   return e ? _model.elements().indexOf(e) : -1;
 }
 
+QVariantList QcGraph::selectionIndexes() const
+{
+  QVariantList result;
+  int c = _model.elementCount();
+  for( int i = 0; i < c; ++i ) {
+    QcGraphElement *e = _model.elementAt(i);
+    if(e->selected)
+      result << i;
+  }
+  return result;
+}
+
 float QcGraph::currentX() const
 {
   QcGraphElement *e = currentElement();
@@ -120,13 +132,13 @@ float QcGraph::currentY() const
   return e ? e->value.y() : 0.f;
 }
 
-void QcGraph::setValue( const VariantList &list )
+void QcGraph::setValue( const QVariantList &list )
 {
-  if( list.data.count() != 2 ) return;
-  VariantList xList = list.data[0].value<VariantList>();
-  VariantList yList = list.data[1].value<VariantList>();
+  if( list.count() != 2 ) return;
+  QVariantList xList = list[0].toList();
+  QVariantList yList = list[1].toList();
 
-  int newc = qMin( xList.data.count(), yList.data.count() );
+  int newc = qMin( xList.count(), yList.count() );
   if( !newc ) return;
 
   int c = _model.elementCount();
@@ -139,8 +151,8 @@ void QcGraph::setValue( const VariantList &list )
   int i;
   for( i = 0; i < newc; ++i )
   {
-    QPointF val( xList.data[i].value<float>(),
-                yList.data[i].value<float>() );
+    QPointF val( xList[i].toFloat(),
+                 yList[i].toFloat() );
     if( i < c ) {
       QcGraphElement *e = _model.elementAt(i);
       setValue( e, val );
@@ -159,22 +171,22 @@ void QcGraph::setValue( const VariantList &list )
   update();
 }
 
-void QcGraph::setStrings( const VariantList &list )
+void QcGraph::setStrings( const QVariantList &list )
 {
-  int strc = list.data.count();
+  int strc = list.count();
   int c = _model.elementCount();
   int i;
   for( i = 0; i < c && i < strc; ++i ) {
     QcGraphElement *e = _model.elementAt(i);
-    e->text = list.data[i].toString();
+    e->text = list[i].toString();
   }
   update();
 }
 
-void QcGraph::setCurves( const VariantList & curves )
+void QcGraph::setCurves( const QVariantList & curves )
 {
-  for( int i = 0; i < curves.data.size() && i < _model.elementCount(); ++i ) {
-    QVariant data = curves.data[i];
+  for( int i = 0; i < curves.size() && i < _model.elementCount(); ++i ) {
+    const QVariant & data = curves[i];
     QcGraphElement::CurveType type;
     double curvature;
     if( data.type() == QVariant::Int ) {
@@ -183,7 +195,7 @@ void QcGraph::setCurves( const VariantList & curves )
     }
     else {
       type = QcGraphElement::Curvature;
-      curvature = data.value<double>();
+      curvature = data.toDouble();
     }
     _model.elementAt(i)->setCurveType( type, curvature );
   }
@@ -215,12 +227,12 @@ void QcGraph::setStringAt( int i, const QString & str )
   }
 }
 
-void QcGraph::connectElements( int src, VariantList targets )
+void QcGraph::connectElements( int src, QVariantList targets )
 {
   int c = _model.elementCount();
   if( src < 0 || src >= c ) return;
 
-  Q_FOREACH( QVariant var, targets.data ) {
+  Q_FOREACH( const QVariant & var, targets ) {
     int trg = var.toInt();
     if( trg < 0 || trg >= c ) continue;
     _model.connect( src, trg );
@@ -638,6 +650,55 @@ void QcGraph::addCurve( QPainterPath &path, QcGraphElement *e1, QcGraphElement *
     path.moveTo( pt1 );
     path.lineTo( pt2 );
     break;
+
+  case QcGraphElement::Quadratic: {
+    path.moveTo( pt1 );
+    const qreal sqrtBegin = std::sqrt(pt1.y());
+    const qreal sqrtEnd   = std::sqrt(pt2.y());
+    const qreal n = 100.f;
+    const qreal grow = (sqrtEnd - sqrtBegin) / n;
+
+    qreal x = pt1.x();
+    qreal y = pt1.y();
+
+    const float dx = (pt2.x() - pt1.x()) / n;
+
+    for (int i = 0; i != n; ++i) {
+        x += dx;
+        y += grow;
+        qreal yCoord = y*y;
+        path.lineTo( x, yCoord );
+    }
+
+    path.lineTo( pt2 );
+
+    break;
+  }
+
+  case QcGraphElement::Cubic: {
+    path.moveTo( pt1 );
+    const qreal cubrtBegin = std::pow(pt1.y(), qreal(1/3.0));
+    const qreal cubrtEnd   = std::pow(pt2.y(), qreal(1/3.0));
+    const qreal n = 100.f;
+    const qreal grow = (cubrtEnd - cubrtBegin) / n;
+
+    qreal x = pt1.x();
+    qreal y = pt1.y();
+
+    const float dx = (pt2.x() - pt1.x()) / n;
+
+    for (int i = 0; i != n; ++i) {
+        x += dx;
+        y += grow;
+        qreal yCoord = y*y*y;
+        path.lineTo( x, yCoord );
+    }
+
+    path.lineTo( pt2 );
+
+    break;
+  }
+
   case QcGraphElement::Sine: {
     // half of difference between end points
     float dx = (pt2.x() - pt1.x()) * 0.5f;

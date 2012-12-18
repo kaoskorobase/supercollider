@@ -64,9 +64,9 @@ UGen : AbstractFunction {
  	}
  	exprange { arg lo = 0.01, hi = 1.0;
 		^if (this.signalRange == \bipolar) {
-			this.linexp(-1, 1, lo, hi)
+			this.linexp(-1, 1, lo, hi, nil)
 		} {
-			this.linexp(0, 1, lo, hi)
+			this.linexp(0, 1, lo, hi, nil)
 		};
  	}
 
@@ -100,6 +100,23 @@ UGen : AbstractFunction {
 			Wrap.perform(Wrap.methodSelectorForRate(rate), this, lo, hi)
 		}
  	}
+	blend { arg that, blendFrac = 0.5;
+		var pan;
+		^if (rate == \demand || that.rate == \demand) {
+			this.notYetImplemented(thisMethod)
+		} {
+			pan = blendFrac.linlin(0.0, 1.0, -1, 1);
+			if (rate == \audio) {
+				^XFade2.ar(this, that, pan)
+			};
+
+			if (that.rate == \audio) {
+				^XFade2.ar(that, this, pan.neg)
+			};
+
+			^LinXFade2.perform(LinXFade2.methodSelectorForRate(rate), this, that, pan)
+		}
+	}
 
  	minNyquist { ^min(this, SampleRate.ir * 0.5) }
 
@@ -374,8 +391,8 @@ UGen : AbstractFunction {
 		^nil
 	}
 	writeInputSpec { arg file, synthDef;
-		file.putInt16(synthIndex);
-		file.putInt16(this.outputIndex);
+		file.putInt32(synthIndex);
+		file.putInt32(this.outputIndex);
 	}
 	writeOutputSpec { arg file;
 		file.putInt8(this.rateNumber);
@@ -390,18 +407,16 @@ UGen : AbstractFunction {
 		^this.class.name.asString;
 	}
 	writeDef { arg file;
-		//[\WR, this.class.name, rate, this.numInputs, this.numOutputs].postln;
 		file.putPascalString(this.name);
 		file.putInt8(this.rateNumber);
-		file.putInt16(this.numInputs);
-		file.putInt16(this.numOutputs);
+		file.putInt32(this.numInputs);
+		file.putInt32(this.numOutputs);
 		file.putInt16(this.specialIndex);
 		// write wire spec indices.
 		inputs.do({ arg input;
 			input.writeInputSpec(file, synthDef);
 		});
 		this.writeOutputSpecs(file);
-		//[this.class.name, file.length].postln;
 	}
 
 ///////////////////////////////////////////////////////////////

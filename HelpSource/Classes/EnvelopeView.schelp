@@ -141,6 +141,9 @@ METHOD:: connect
 	argument:: connections
 		An Array of Integers - indexes of nodes, each to become the second end to a new connection created.
 
+METHOD:: selection
+	note::Only in Qt GUI::
+	Returns an array of indexes of all selected nodes.
 
 
 SUBSECTION:: Appearance
@@ -325,7 +328,7 @@ METHOD:: defaultKeyDownAction
 
     Implements the default behavior on key presses.
 
-    In Qt, the default behavior is defined in the C++ implementation of the view instead of this method. See link::Classes/View#Key and mouse event propagation:: for explanation of how to override the behavior.
+    In Qt, the default behavior is defined in the C++ implementation of the view instead of this method. See link::Classes/View#Key and mouse event processing:: for explanation of how to override the behavior.
 
 
 

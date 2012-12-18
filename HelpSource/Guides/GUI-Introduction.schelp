@@ -4,35 +4,56 @@ categories:: GUI
 
 
 
-SECTION:: Platform indepedent GUI code
+SECTION:: First problem: Platform independence
 
-SuperCollider provides for writing graphical user interface code that may be executed by different GUI kits implementing the same functionality. A user may not worry about the different implementations and under most circumstances generic GUI code will have the same effect in any of them. Nontheless, there may appear slight differences between them, therefore it's worth mentioning them here.
+strong::Why do you need to know about this?::
 
-subsection:: Different GUI kits
-
-Various GUI kits are managed by the link::Classes/GUI:: class. See it's documentation for details of how to switch the active GUI kit.
-
-At the moment of this writing, there exist three GUI kits:
-
-table::
-
-## strong::Name:: || strong::Implementation:: || strong::Availability::
-## strong::Cocoa:: || Mac OS Cocoa toolkit || Only on Mac OS, within the SuperCollider application
-## strong::SwingOSC:: || Java || Cross-platform, running as a separate program and commuincating with SuperCollider via OSC.
-## strong::Qt:: || Qt framework || Cross-platform.
-
+numberedlist::
+## You'll create a Window.new and wonder why you got back a SCWindow or QWindow.
+## You might use Mac-only GUI objects and wonder why your friend on Windows can't run your code.
+## On Mac, you might run some examples that are specific to Q- objects and wonder why they don't work right away.
 ::
 
-subsection:: Generic GUI code
+strong::Short answer::
 
-There is a set of classes available for writing generic GUI code. When they are instantiated an instance of the kit-specific equivalent class is returned instead. The equivalent classes of all the GUI kits implement a large set of common methods which can therefore be used in generic code, and are documented as belonging to the generic class.
+Make sure you select the right strong::GUI kit::.
 
-The kit-specific classes typically have the same name as their generic equivalents, but prefixed with an identifier of the implementation: "SC" for Cocoa, "JSC" for SwingOSC and "Q" for Qt.
+When SuperCollider starts, one of the available kits becomes the default.
+
+table::
+## strong::Platform:: || strong::Default kit::
+## Mac OSX || Cocoa -- code::GUI.cocoa::
+## Linux/FreeBSD || Qt -- code::GUI.qt::
+## Windows || Qt -- code::GUI.qt::
+::
+
+For most cases, the Qt GUI kit is sufficient. Cocoa is retained as the default in Mac OSX for historical reasons. (This may change in a future release.)
+
+warning:: Some GUI examples are Qt-specific. They are labeled as such in the documentation. Strong::These examples will not work in OSX unless you manually switch to the Qt kit:: by running the following code:
+
+code::GUI.qt;::
+::
+
+See the link::Classes/GUI:: help file for more background on the GUI kits.
+
+
+subsection:: Use "GUI redirect" classes whenever possible
+
+It is strongly recommended to use generic view class names: Window, Button, Slider, etc. Code written using the generic names can run in other GUI kits.
+
+code::
+// DO write
+w = Window.new.front;
+
+// DO NOT write
+w = SCWindow.new.front;
+::
+
+In the second example, the use of the Cocoa-specific window class ensures that the code will not run in Linux or Windows without modification. This is usually not a good idea.
 
 For a list of all the generic GUI classes and their kit-specific equivalents see link::Overviews/GUI-Classes::.
 
 In the rest of this document we will refer to GUI classes by their generic name, adding notes where important differences between GUI kits are of concern.
-
 
 
 
@@ -208,7 +229,7 @@ Views and windows can be assigned strong::actions:: that they will perform whene
 
 Objects can also be given to views and windows to evalute on events that are not a direct result of user's interaction, but convey useful information about the view's operation and the state it moved in. In this case they are often differentiated from actions and called strong::hooks::.
 
-Here, we will give an overview of different kinds of actions and hooks. See link::Classes/View#actions_in_general:: and following sections for precise explanation of how to assign and make use of them.
+Here, we will give an overview of different kinds of actions and hooks. See link::Classes/View#Actions in general:: and following sections for precise explanation of how to assign and make use of them.
 
 
 subsection:: Default actions
@@ -231,7 +252,7 @@ All the views can be assigned actions to specific mouse and keyboard events, no 
 
 You can assign actions to strong::mouse events:: generated when the mouse pointer enters the space of a view, when it moves over them, and when a mouse button is pressed or released.
 
-See link::Classes/View#mouse_actions#View: Mouse Actions:: for details.
+See link::Classes/View#Mouse actions:: for details.
 
 In the following example the StaticText will report whether the Button is pressed or released.
 
@@ -245,7 +266,7 @@ b.mouseUpAction = { t.string = "Button released" };
 
 You can assign actions to strong::keyboard events:: generated whenever a key is pressed or released while the view has keyboard focus. Keyboard focus is a state of a view in which it has exclusive priority to respond to keyboard events. A view that has keyboard focus typically in a way visually indicates so. On most platforms, pressing the Tab key will switch the keyboard focus between views in the active window and clicking on a view will give it focus.
 
-See link::Classes/View#key_actions#View: Key Actions:: for details.
+See link::Classes/View#Key actions:: for details.
 
 Typing text into any of the TextFields in the following example will change the color of the rectangle bellow, for each TextField a different color.
 
@@ -262,7 +283,7 @@ y.keyUpAction = ~reset;
 ~reset.value;
 ::
 
-If a key or mouse event is not handled by the view on which it occurs, it may strong::propagate:: to the parent view, and trigger the parent's action. See link::Classes/View#key_and_mouse_event_propagation#View: Key and mouse event propagation:: for detailed explanation.
+If a key or mouse event is not handled by the view on which it occurs, it may strong::propagate:: to the parent view, and trigger the parent's action. See link::Classes/View#Key and mouse event processing:: for detailed explanation.
 
 subsection:: Drag and drop actions
 
@@ -270,7 +291,7 @@ When a mouse button is pressed on a view together with Cmd(Mac OS) or Ctrl(Other
 
 It is possible to customize what object a view exports when dragged from and how a view reacts to objects dropped by assigning custom drag and drop actions.
 
-See link::Classes/View#drag_and_drop:: for details.
+See link::Classes/View#Drag and drop:: for details.
 
 code::
 (

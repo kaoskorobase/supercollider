@@ -33,14 +33,11 @@ SynthDef {
 	}
 
 	*new { arg name, ugenGraphFunc, rates, prependArgs, variants, metadata;
-		^this.prNew(name).variants_(variants).metadata_(metadata)
+		^super.newCopyArgs(name.asSymbol).variants_(variants).metadata_(metadata).children_(Array.new(64))
 			.build(ugenGraphFunc, rates, prependArgs)
 	}
-	*prNew { arg name;
-		^super.new.name_(name.asString)
-	}
 
-	storeArgs { ^[name.asSymbol, func] }
+	storeArgs { ^[name, func] }
 
 	build { arg ugenGraphFunc, rates, prependArgs;
 		protect {
@@ -60,12 +57,13 @@ SynthDef {
 		};
 		^UGen.buildSynthDef.buildUgenGraph(func, rates, prependArgs);
 	}
+
 	//only write if no file exists
-	*writeOnce { arg name, func, rates, prependArgs, variants, dir, metadata;
-		this.new(name, func, rates, prependArgs, variants, metadata).writeOnce(dir)
+	*writeOnce { arg name, func, rates, prependArgs, variants, dir, metadata, mdPlugin;
+		this.new(name, func, rates, prependArgs, variants, metadata).writeOnce(dir, mdPlugin)
 	}
-	writeOnce { arg dir;
-		this.writeDefFile(dir, false)
+	writeOnce { arg dir, mdPlugin;
+		this.writeDefFile(dir, false, mdPlugin)
 	}
 
 	initBuild {
@@ -289,9 +287,18 @@ SynthDef {
 		this.asArray.writeDef(stream);
 		^stream.collection;
 	}
-	writeDefFile { arg dir, overwrite;
+	writeDefFile { arg dir, overwrite(true), mdPlugin;
+		var desc, defFileExistedBefore;
 		if((metadata.tryPerform(\at, \shouldNotSend) ? false).not) {
+			dir = dir ? SynthDef.synthDefDir;
+			defFileExistedBefore = File.exists(dir +/+ name ++ ".scsyndef");
 			super.writeDefFile(name, dir, overwrite);
+			if(overwrite or: { defFileExistedBefore.not }) {
+				desc = this.asSynthDesc;
+				desc.metadata = metadata;
+				SynthDesc.populateMetadataFunc.value(desc);
+				desc.writeMetadata(dir +/+ name, mdPlugin);
+			};
 		} {
 			// actual error, not just warning as in .send and .load,
 			// because you might try to write the file somewhere other than
@@ -300,30 +307,31 @@ SynthDef {
 				.format(name), this).throw
 		}
 	}
+
 	writeDef { arg file;
 		// This describes the file format for the synthdef files.
 		var allControlNamesTemp, allControlNamesMap;
 
-		file.putPascalString(name);
+		file.putPascalString(name.asString);
 
 		this.writeConstants(file);
 
 		//controls have been added by the Control UGens
-		file.putInt16(controls.size);
+		file.putInt32(controls.size);
 		controls.do { | item |
 			file.putFloat(item);
 		};
 
 		allControlNamesTemp = allControlNames.reject { |cn| cn.rate == \noncontrol };
-		file.putInt16(allControlNamesTemp.size);
+		file.putInt32(allControlNamesTemp.size);
 		allControlNamesTemp.do { | item |
 			if (item.name.notNil) {
 				file.putPascalString(item.name.asString);
-				file.putInt16(item.index);
+				file.putInt32(item.index);
 			};
 		};
 
-		file.putInt16(children.size);
+		file.putInt32(children.size);
 		children.do { | item |
 			item.writeDef(file);
 		};
@@ -369,15 +377,16 @@ SynthDef {
 					file.putFloat(item);
 				};
 			};
-		}
+		};
 	}
+
 	writeConstants { arg file;
 		var array = FloatArray.newClear(constants.size);
 		constants.keysValuesDo { arg value, index;
 			array[index] = value;
 		};
 
-		file.putInt16(constants.size);
+		file.putInt32(constants.size);
 		array.do { | item |
 			file.putFloat(item)
 		};
@@ -388,22 +397,18 @@ SynthDef {
 		children.do { arg ugen;
 			var err;
 			if ((err = ugen.checkInputs).notNil) {
-				if(firstErr.isNil){
-					firstErr = if(err.indexOf($:).isNil){err}{
-						err[..err.indexOf($:)-1]
-					};
-				};
-				(ugen.class.asString + err).postln;
+				err = ugen.class.asString + err;
+				err.postln;
 				ugen.dumpArgs;
+				if(firstErr.isNil) { firstErr = err };
 			};
 		};
 		if(firstErr.notNil) {
-			("SynthDef" + this.name + "build failed").postln;
+			"SynthDef % build failed".format(this.name).postln;
 			Error(firstErr).throw
 		};
 		^true
 	}
-
 
 
 	// UGens do these
@@ -608,10 +613,10 @@ SynthDef {
 				lib.servers.do { arg server;
 					this.doSend(server.value, completionMsg)
 				};
-				desc = lib[this.name.asSymbol];
+				desc = lib[this.name];
 				desc.metadata = metadata;
 				SynthDesc.populateMetadataFunc.value(desc);
-				desc.writeMetadata(path);
+				desc.writeMetadata(path, mdPlugin);
 			} {
 				file.close
 			}

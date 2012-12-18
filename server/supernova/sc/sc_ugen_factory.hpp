@@ -32,8 +32,7 @@
 
 #include "utilities/named_hash_entry.hpp"
 
-namespace nova
-{
+namespace nova {
 namespace bi = boost::intrusive;
 
 struct sc_unitcmd_def:
@@ -78,7 +77,7 @@ public:
         unitcmd_set(unitcmd_set_type::bucket_traits(unitcmd_set_buckets, unitcmd_set_bucket_count))
     {}
 
-    Unit * construct(sc_synthdef::unit_spec_t const & unit_spec, sc_synth * s, World * world, char *& chunk);
+    Unit * construct(sc_synthdef::unit_spec_t const & unit_spec, sc_synth * s, World * world, linear_allocator & allocator);
 
     void initialize(Unit * unit)
     {
@@ -185,7 +184,7 @@ public:
 
     void register_bufgen(const char * name, BufGenFunc func);
 
-    sc_ugen_def * find_ugen(c_string const & name);
+    sc_ugen_def * find_ugen(symbol const & name);
 
     bool register_ugen_command_function(const char * ugen_name, const char * cmd_name, UnitCmdFunc);
     bool register_cmd_plugin(const char * cmd_name, PlugInCmdFunc func, void * user_data);
@@ -202,6 +201,10 @@ class sc_ugen_factory:
     public sc_plugin_container
 {
 public:
+    sc_ugen_factory():
+        ugen_count_(0)
+    {}
+
     ~sc_ugen_factory(void)
     {
         close_handles();

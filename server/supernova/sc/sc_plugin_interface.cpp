@@ -40,6 +40,8 @@
 #include "SC_fftlib.h"
 #include "../../common/SC_SndFileHelpers.hpp"
 
+#include <boost/math/constants/constants.hpp>
+
 // undefine the shadowed scfft functions
 #undef scfft_create
 #undef scfft_dofft
@@ -563,7 +565,7 @@ int do_asynchronous_command(World *inWorld, void* replyAddr, const char* cmdName
                                             stage2, stage3, stage4, cleanup,
                                             completionMsgSize, completionMsgData);
     return 0;
-};
+}
 
 } /* extern "C" */
 
@@ -575,7 +577,7 @@ inline void initialize_rate(Rate & rate, double sample_rate, int blocksize)
 {
     rate.mSampleRate = sample_rate;
     rate.mSampleDur = 1. / sample_rate;
-    rate.mRadiansPerSample = 2 * M_PI / sample_rate;
+    rate.mRadiansPerSample = 2 * boost::math::constants::pi<double>() / sample_rate;
 
     rate.mBufLength = blocksize;
     rate.mBufDuration = blocksize / sample_rate;
@@ -691,7 +693,7 @@ void sc_plugin_interface::initialize(server_arguments const & args, float * cont
     memset(world.mSndBufUpdates, 0, world.mNumSndBufs*sizeof(SndBufUpdates));
     world.mBufCounter = 0;
 
-    async_buffer_guards.reset(new boost::mutex[world.mNumSndBufs]);
+    async_buffer_guards.reset(new std::mutex[world.mNumSndBufs]);
 
     /* audio settings */
     world.mBufLength = args.blocksize;
@@ -704,6 +706,27 @@ void sc_plugin_interface::initialize(server_arguments const & args, float * cont
     world.mNumOutputs = args.output_channels;
 
     world.mRealTime = !args.non_rt;
+
+    /* rngs */
+    world.mNumRGens = args.rng_count;
+    world.mRGen = new RGen[world.mNumRGens];
+    std::vector<std::uint32_t> seeds(world.mNumRGens);
+
+    try {
+        std::random_device rd;
+        std::seed_seq seq({ rd(), rd(), rd() });
+        seq.generate(seeds.begin(), seeds.end());
+    } catch (...) {
+        auto now = std::chrono::high_resolution_clock::now();
+
+        auto seconds = std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch());
+
+        std::seed_seq seq({ seconds.count() });
+        seq.generate(seeds.begin(), seeds.end());
+    }
+
+    for (int i=0; i<world.mNumRGens; ++i)
+        world.mRGen[i].init(seeds[i]);
 }
 
 void sc_plugin_interface::reset_sampling_rate(int sr)
@@ -717,19 +740,24 @@ void sc_plugin_interface::reset_sampling_rate(int sr)
 
 void sc_done_action_handler::update_nodegraph(void)
 {
-    std::for_each(done_nodes.begin(), done_nodes.end(), boost::bind(&nova_server::free_node, instance, _1));
+    for (server_node * node : done_nodes)
+        instance->free_node(node);
     done_nodes.clear();
 
-    std::for_each(resume_nodes.begin(), resume_nodes.end(), boost::bind(&nova_server::node_resume, instance, _1));
+    for (server_node * node : resume_nodes)
+        instance->node_resume(node);
     resume_nodes.clear();
 
-    std::for_each(pause_nodes.begin(), pause_nodes.end(), boost::bind(&nova_server::node_pause, instance, _1));
+    for (server_node * node : pause_nodes)
+        instance->node_pause(node);
     pause_nodes.clear();
 
-    std::for_each(freeDeep_nodes.begin(), freeDeep_nodes.end(), boost::bind(&nova_server::group_free_deep, instance, _1));
+    for (abstract_group * group : freeDeep_nodes)
+        instance->group_free_deep(group);
     freeDeep_nodes.clear();
 
-    std::for_each(freeAll_nodes.begin(), freeAll_nodes.end(), boost::bind(&nova_server::group_free_all, instance, _1));
+    for (abstract_group * group : freeAll_nodes)
+        instance->group_free_all(group);
     freeAll_nodes.clear();
 }
 
@@ -741,11 +769,11 @@ sc_plugin_interface::~sc_plugin_interface(void)
     delete[] world.mSndBufs;
     delete[] world.mSndBufsNonRealTimeMirror;
     delete[] world.mSndBufUpdates;
+    delete[] world.mRGen;
     delete world.mNRTLock;
 }
 
-namespace
-{
+namespace {
 
 sample * allocate_buffer(size_t samples)
 {
@@ -869,11 +897,11 @@ SndBuf * sc_plugin_interface::allocate_buffer(uint32_t index, uint32_t frames, u
     return buf;
 }
 
-int sc_plugin_interface::buffer_read_alloc(uint32_t index, const char * filename, uint32_t start, uint32_t frames)
+void sc_plugin_interface::buffer_read_alloc(uint32_t index, const char * filename, uint32_t start, uint32_t frames)
 {
     SndfileHandle f(filename);
-    if (!f)
-        return -1; /* file cannot be opened */
+    if (f.rawHandle() == nullptr)
+        throw std::runtime_error(f.strError());
 
     const size_t sf_frames = f.frames();
 
@@ -888,22 +916,21 @@ int sc_plugin_interface::buffer_read_alloc(uint32_t index, const char * filename
 
     f.seek(start, SEEK_SET);
     f.readf(buf->data, frames);
-    return 0;
 }
 
 
-int sc_plugin_interface::buffer_alloc_read_channels(uint32_t index, const char * filename, uint32_t start,
-                                                    uint32_t frames, uint32_t channel_count,
-                                                    const uint32_t * channel_data)
+void sc_plugin_interface::buffer_alloc_read_channels(uint32_t index, const char * filename, uint32_t start,
+                                                     uint32_t frames, uint32_t channel_count,
+                                                     const uint32_t * channel_data)
 {
     SndfileHandle f(filename);
-    if (!f)
-        return -1; /* file cannot be opened */
+    if (f.rawHandle() == nullptr)
+        throw std::runtime_error(f.strError());
 
     uint32_t sf_channels = uint32_t(f.channels());
     const uint32_t * max_chan = std::max_element(channel_data, channel_data + channel_count);
     if (*max_chan >= sf_channels)
-        return -2;
+        throw std::runtime_error("Channel out of range");
 
     const size_t sf_frames = f.frames();
 
@@ -918,8 +945,6 @@ int sc_plugin_interface::buffer_alloc_read_channels(uint32_t index, const char *
 
     f.seek(start, SEEK_SET);
     read_channel(f, channel_count, channel_data, frames, buf->data);
-
-    return 0;
 }
 
 
@@ -949,32 +974,30 @@ int sc_plugin_interface::buffer_write(uint32_t index, const char * filename, con
     return 0;
 }
 
-static int buffer_read_verify(SndfileHandle const & sf, size_t min_length, size_t samplerate)
+static void buffer_read_verify(SndfileHandle & sf, size_t min_length, size_t samplerate, bool check_samplerate)
 {
-    if (!sf)
-        return -1;
+    if (sf.rawHandle() == nullptr)
+        throw std::runtime_error(sf.strError());
     if (sf.frames() < min_length)
-        return -2; /* no more frames to read */
-    if (sf.samplerate() != samplerate)
-        return -3; /* sample rate mismatch */
-    return 0;
+        throw std::runtime_error("no more frames to read");
+
+    if (check_samplerate && (sf.samplerate() != samplerate))
+        throw std::runtime_error("sample rate mismatch");
 }
 
-int sc_plugin_interface::buffer_read(uint32_t index, const char * filename, uint32_t start_file, uint32_t frames,
-                                     uint32_t start_buffer, bool leave_open)
+void sc_plugin_interface::buffer_read(uint32_t index, const char * filename, uint32_t start_file, uint32_t frames,
+                                      uint32_t start_buffer, bool leave_open)
 {
     SndBuf * buf = World_GetNRTBuf(&world, index);
 
     if (uint32_t(buf->frames) < start_buffer)
-        return -2; /* buffer already full */
+        throw std::runtime_error("buffer already full");
 
     SndfileHandle sf(filename, SFM_READ);
-    int error = buffer_read_verify(sf, start_file, buf->samplerate);
-    if (error)
-        return error;
+    buffer_read_verify(sf, start_file, buf->samplerate, !leave_open);
 
     if (sf.channels() != buf->channels)
-        return -3; /* sample rate or channel count mismatch */
+        throw std::runtime_error("channel count mismatch");
 
     const uint32_t buffer_remain = buf->frames - start_buffer;
     const uint32_t file_remain = sf.frames() - start_file;
@@ -985,41 +1008,38 @@ int sc_plugin_interface::buffer_read(uint32_t index, const char * filename, uint
 
     if (leave_open)
         buf->sndfile = sf.takeOwnership();
-    return 0;
 }
 
-int sc_plugin_interface::buffer_read_channel(uint32_t index, const char * filename, uint32_t start_file, uint32_t frames,
+void sc_plugin_interface::buffer_read_channel(uint32_t index, const char * filename, uint32_t start_file, uint32_t frames,
                                              uint32_t start_buffer, bool leave_open, uint32_t channel_count,
                                              const uint32_t * channel_data)
 {
     SndBuf * buf = World_GetNRTBuf(&world, index);
 
     if (channel_count != uint32_t(buf->channels))
-        return -2; /* channel count mismatch */
+        throw std::runtime_error("channel count mismatch");
 
     if (uint32_t(buf->frames) >= start_buffer)
-        return -2; /* buffer already full */
+        throw std::runtime_error("buffer already full");
 
     SndfileHandle sf(filename, SFM_READ);
-    int error = buffer_read_verify(sf, start_file, buf->samplerate);
-    if (error)
-        return error;
+    buffer_read_verify(sf, start_file, buf->samplerate, !leave_open);
 
     uint32_t sf_channels = uint32_t(sf.channels());
     const uint32_t * max_chan = std::max_element(channel_data, channel_data + channel_count);
     if (*max_chan >= sf_channels)
-        return -2;
+        throw std::runtime_error("channel count mismatch");
+
     const uint32_t buffer_remain = buf->frames - start_buffer;
     const uint32_t file_remain = sf.frames() - start_file;
 
     const uint32_t frames_to_read = std::min(frames, std::min(buffer_remain, file_remain));
 
     sf.seek(start_file, SEEK_SET);
-    read_channel(sf, channel_count, channel_data, frames, buf->data);
+    read_channel(sf, channel_count, channel_data, frames_to_read, buf->data);
 
     if (leave_open)
         buf->sndfile = sf.takeOwnership();
-    return 0;
 }
 
 void sc_plugin_interface::buffer_close(uint32_t index)
@@ -1051,7 +1071,7 @@ sample * sc_plugin_interface::buffer_generate(uint32_t buffer_index, const char*
     return sc_factory->run_bufgen(&world, cmd_name, buffer_index, &msg);
 }
 
-void sc_plugin_interface::buffer_sync(uint32_t index)
+void sc_plugin_interface::buffer_sync(uint32_t index) noexcept
 {
     sndbuf_copy(world.mSndBufs + index, world.mSndBufsNonRealTimeMirror + index);
     increment_write_updates(index);

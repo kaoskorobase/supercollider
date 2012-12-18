@@ -25,10 +25,14 @@ Node {
 
 	*actionNumberFor { |addAction = (\addToHead)| ^addActions[addAction] }
 
-	free { arg sendFlag=true;
-		if(sendFlag, {
-			server.sendMsg(11, nodeID);  //"/n_free"
-		});
+	free { arg sendFlag = true, sendBundle = false;
+		if(sendFlag) {
+			if(sendBundle) {
+				server.sendMsg(11, nodeID)  //"/n_free"
+			} {
+				server.sendBundle(server.latency, [11, nodeID])
+			}
+		};
 		group = nil;
 		isPlaying = false;
 		isRunning = false;
@@ -211,12 +215,14 @@ Node {
 		^msg
 	}
 
-	hash {  ^server.hash bitXor: nodeID.hash	}
-
-	== { arg aNode;
-		^aNode respondsTo: #[\nodeID, \server]
-			and: { aNode.nodeID == nodeID and: { aNode.server === server }}
+	== { arg that;
+		^this.compareObject(that, #[\nodeID, \server])
 	}
+
+	hash {
+		^this.instVarHash(#[\nodeID, \server])
+	}
+
 	printOn { arg stream; stream << this.class.name << "(" << nodeID <<")" }
 	asUGenInput { Error("should not use a % inside a SynthDef".format(this.class.name)).throw }
 	asControlInput { ^this.nodeID }

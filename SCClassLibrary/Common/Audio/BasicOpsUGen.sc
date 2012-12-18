@@ -92,7 +92,6 @@ BinaryOpUGen : BasicOpUGen {
 		if (selector == '/', {
 			if (b == 1.0, { ^a });
 			if (b == -1.0, { ^a.neg });
-			if (b.rate == 'scalar', { ^a * b.reciprocal });
 		})})})});
 
  		^super.new1(rate, selector, a, b)
@@ -423,7 +422,7 @@ Sum3 : UGen {
 		rate = argArray.rate;
 		sortedArgs = argArray.sort {|a b| a.rate < b.rate};
 
-		^super.new1(*([rate] ++ sortedArgs))
+		^super.new1(rate, *sortedArgs)
 	}
 }
 
@@ -444,6 +443,6 @@ Sum4 : UGen {
 		rate = argArray.rate;
 		sortedArgs = argArray.sort {|a b| a.rate < b.rate};
 
-		^super.new1(rate, in0, in1, in2, in3)
+		^super.new1(rate, *sortedArgs)
 	}
 }

@@ -92,8 +92,18 @@ SequenceableCollection : Collection {
 		newlist = newlist.addAll(this).addAll(aSequenceableCollection);
 		^newlist
 	}
-	+++ { arg aSequenceableCollection;
+	+++ { arg aSequenceableCollection, adverb;
 		aSequenceableCollection = aSequenceableCollection.asSequenceableCollection;
+		if(adverb.notNil) {
+			if(adverb == 0) { ^this ++ aSequenceableCollection };
+			if(adverb == 1) { ^this +++ aSequenceableCollection };
+			if(adverb < 0) { ^aSequenceableCollection.perform('+++', this, adverb.neg) };
+			^this.deepCollect(adverb - 1, { |sublist|
+				sublist.asSequenceableCollection.collect {|item, i|
+					item.asSequenceableCollection ++ aSequenceableCollection.wrapAt(i)
+				}
+			})
+		};
 		^this.collect {|item, i|
 			item.asSequenceableCollection ++ aSequenceableCollection.wrapAt(i)
 		}
@@ -116,6 +126,14 @@ SequenceableCollection : Collection {
 			if (item != aCollection[i]) { ^false };
 		};
 		^true
+	}
+
+	hash {
+		var hash = this.class.hash;
+		this.do { | item |
+			hash = hash << 1 bitXor: item.hash // encode item order by left shifting
+		};
+		^hash
 	}
 
 	copyRange { arg start, end;
@@ -167,13 +185,13 @@ SequenceableCollection : Collection {
 		^nil
 	}
 
-        indicesOfEqual { |item|
-                var indices;
-                this.do { arg val, i;
-                        if (item == val) { indices = indices.add(i) }
-                };
-                ^indices
-        }
+	indicesOfEqual { |item|
+		var indices;
+		this.do { arg val, i;
+			if (item == val) { indices = indices.add(i) }
+		};
+		^indices
+	}
 
 
 	find { |sublist, offset=0|
@@ -461,32 +479,22 @@ SequenceableCollection : Collection {
 	}
 
 	flopDeep { arg rank;
-			var size, maxsize;
-			if(rank.isNil) { ^this.flop };
-			
-			size = this.size;
-			maxsize = this.maxSizeAtDepth(rank);
-			^this.species.fill(maxsize, { |i|
-				this.wrapCopyAtDepth(rank, i)
-			})
+		var size, maxsize;
+		if(rank.isNil) { rank = this.maxDepth - 1 };
+		if(rank <= 1) { ^this.flop };
+
+		size = this.size;
+		maxsize = this.maxSizeAtDepth(rank);
+		^this.species.fill(maxsize, { |i|
+			this.wrapAtDepth(rank, i)
+		})
 	}
 
-	maxSizeAtDepth { arg rank;
-		var maxsize = 0;
-		if(rank == 0) { ^this.size };
-		this.do { |sublist| 
-			var sz = if(sublist.isSequenceableCollection) 
-					{ sublist.maxSizeAtDepth(rank - 1) } { 1 };
-			if (sz > maxsize) { maxsize = sz };
-		};
-		^maxsize
-	}
-
-	wrapCopyAtDepth { arg rank, index;
+	wrapAtDepth { arg rank, index;
 		if(rank == 0) { ^this.wrapAt(index) };
 		^this.collect { |item, i|
 			if(item.isSequenceableCollection) {
-				item.wrapCopyAtDepth(rank - 1, index) 
+				item.wrapAtDepth(rank - 1, index)
 			} {
 				item
 			}
@@ -908,6 +916,8 @@ SequenceableCollection : Collection {
 	expexp { arg ... args; ^this.multiChannelPerform('expexp', *args) }
 	lincurve { arg ... args; ^this.multiChannelPerform('lincurve', *args) }
 	curvelin { arg ... args; ^this.multiChannelPerform('curvelin', *args) }
+	bilin { arg ... args; ^this.multiChannelPerform('bilin', *args) }
+	biexp { arg ... args; ^this.multiChannelPerform('biexp', *args) }
 	range { arg ... args; ^this.multiChannelPerform('range', *args) }
 	exprange { arg ... args; ^this.multiChannelPerform('exprange', *args) }
 	unipolar { arg ... args; ^this.multiChannelPerform('unipolar', *args) }

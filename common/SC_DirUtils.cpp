@@ -25,6 +25,7 @@
 #include <stdexcept>
 
 #ifdef _WIN32
+# include <windows.h>
 # include <direct.h>
 # include "SC_Win32Utils.h"
 #else
@@ -147,7 +148,7 @@ bool sc_IsNonHostPlatformDir(const char *name)
 	const char a[] = "linux", b[] = "windows", c[]="iphone";
 #elif defined(__linux__)
 	const char a[] = "osx", b[] = "windows", c[]="iphone";
-#elif defined(__FreeBSD__)
+#elif defined(__FreeBSD__) || defined(__OpenBSD__)
 	const char a[] = "osx", b[] = "windows", c[]="iphone";
 #elif defined(_WIN32)
 	const char a[] = "osx", b[] = "linux", c[]="iphone";
@@ -169,8 +170,8 @@ inline static bool sc_IsSpecialDirectory(const char* name)
 
 bool sc_SkipDirectory(const char *name)
 {
-	return ((strcasecmp(name, "help") == 0) ||
-			(strcasecmp(name, "ignore") == 0) ||
+	return (stringCaseCompare(name, "help")   ||
+			stringCaseCompare(name, "ignore") ||
 			(strcmp(name, ".svn") == 0) ||
 			(strcmp(name, ".git") == 0) ||
 			(strcmp(name, "_darcs") == 0) ||
@@ -275,6 +276,21 @@ void sc_GetResourceDirectory(char* pathBuf, int length)
 #endif
 }
 
+#elif defined(_WIN32)
+
+bool sc_IsStandAlone()
+{
+	return false;
+}
+
+void sc_GetResourceDirectory(char* dest, int length)
+{
+	char buf[length];
+	GetModuleFileName( NULL, buf, length );
+	char *path = win32_dirname(buf);
+	strcpy(dest, path);
+}
+
 #else
 
 bool sc_IsStandAlone()
@@ -312,7 +328,7 @@ void sc_GetUserHomeDirectory(char *str, int size)
 		strcpy(str, "./");
 	}
 #else
-	win32_GetHomeFolder(str,size);
+	win32_GetKnownFolderPath(CSIDL_PROFILE, str, size);
 #endif
 }
 
@@ -321,6 +337,11 @@ void sc_GetUserHomeDirectory(char *str, int size)
 
 void sc_GetSystemAppSupportDirectory(char *str, int size)
 {
+#ifdef _WIN32
+	win32_GetKnownFolderPath(CSIDL_COMMON_APPDATA, str, size);
+	sc_AppendToPath(str, size, "SuperCollider");
+#else
+
 	strncpy(str,
 #if defined(SC_DATA_DIR)
 			SC_DATA_DIR,
@@ -328,16 +349,16 @@ void sc_GetSystemAppSupportDirectory(char *str, int size)
 			"/",
 #elif defined(__APPLE__)
 			"/Library/Application Support",
-#elif defined(_WIN32)
-			( getenv("SC_SYSAPPSUP_PATH")==NULL ) ? "C:\\SuperCollider" : getenv("SC_SYSAPPSUP_PATH"),
 #else
 			"/usr/local/share/SuperCollider",
 #endif
 			size);
-			
+
 #if defined(__APPLE__)
 	// Get the main bundle name for the app from the enclosed Info.plist 
 	sc_AppendBundleName(str, size);
+#endif
+
 #endif
 }
 
@@ -354,6 +375,11 @@ void sc_GetUserAppSupportDirectory(char *str, int size)
 		return;
 	}
 
+#if defined(_WIN32)
+	win32_GetKnownFolderPath(CSIDL_LOCAL_APPDATA, str, size);
+	sc_AppendToPath(str, size, "SuperCollider");
+#else
+
 	sc_GetUserHomeDirectory(str, size);
 
 #if defined(SC_IPHONE)
@@ -362,10 +388,10 @@ void sc_GetUserAppSupportDirectory(char *str, int size)
 	// Get the main bundle name for the app
 	sc_AppendToPath(str, size, "Library/Application Support");
 	sc_AppendBundleName(str, size);
-#elif defined(_WIN32)
-	sc_AppendToPath(str, size, "SuperCollider");
 #else
 	sc_AppendToPath(str, size, ".local/share/SuperCollider");
+#endif
+
 #endif
 }
 
@@ -399,8 +425,6 @@ void sc_GetUserConfigDirectory(char *str, int size)
 	}
 
 #if defined(__linux__) || defined(__freebsd__)
-	char * home = str;
-
 	sc_GetUserHomeDirectory(str, size);
 	sc_AppendToPath(str, size, ".config/SuperCollider");
 #else

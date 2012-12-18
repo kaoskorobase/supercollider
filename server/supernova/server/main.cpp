@@ -16,11 +16,11 @@
 //  the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 //  Boston, MA 02111-1307, USA.
 
-#include <iostream>
-#include <cstdlib>
 #include <csignal>
-#include <vector>
+#include <cstdlib>
+#include <iostream>
 #include <string>
+#include <vector>
 
 #include <boost/filesystem/path.hpp>
 #include <boost/algorithm/string.hpp>
@@ -29,18 +29,17 @@
 #include "server_args.hpp"
 
 #include "../sc/sc_ugen_factory.hpp"
-#include "../sc/sc_synth_prototype.hpp"
+#include "../sc/sc_synth_definition.hpp"
 #include "../utilities/utils.hpp"
 
-#include <wordexp.h> /**< \todo: this is posix-only */
+#ifdef __linux__
+#include <wordexp.h>
+#include <sys/resource.h>
+#endif
 
 #if (_POSIX_MEMLOCK - 0) >=  200112L
 # include <sys/resource.h>
 # include <sys/mman.h>
-#endif
-
-#ifdef __LINUX__
-#include <sys/resource.h>
 #endif
 
 #include "SC_DirUtils.h"
@@ -56,7 +55,7 @@ void terminate(int i)
     instance->terminate();
 }
 
-void register_handles(void)
+void register_signal_handler(void)
 {
     void (*prev_fn)(int);
 
@@ -78,7 +77,7 @@ void connect_jack_ports(void)
         else {
             vector<string> portnames;
             boost::split(portnames, input_port, is_any_of(","));
-            for (int i = 0; i != portnames.size(); ++i)
+            for (size_t i = 0; i != portnames.size(); ++i)
                 instance->connect_input(i, portnames[i].c_str());
         }
     }
@@ -92,7 +91,7 @@ void connect_jack_ports(void)
         else {
             vector<string> portnames;
             boost::split(portnames, output_port, is_any_of(","));
-            for (int i = 0; i != portnames.size(); ++i)
+            for (size_t i = 0; i != portnames.size(); ++i)
                 instance->connect_output(i, portnames[i].c_str());
         }
     }
@@ -126,7 +125,7 @@ void start_audio_backend(server_arguments const & args)
     instance->prepare_backend();
     instance->activate_audio();
 
-    int real_sampling_rate = instance->get_samplerate();
+    unsigned int real_sampling_rate = instance->get_samplerate();
 
     if (args.samplerate && args.samplerate != real_sampling_rate) {
         cout << "samplerate mismatch between command line argument and jack" << endl;
@@ -147,12 +146,13 @@ void start_audio_backend(server_arguments const & args)
     bool success = instance->open_stream(args.hw_name, args.input_channels, args.hw_name, args.output_channels,
         args.samplerate, args.blocksize, args.blocksize);
 
-    if (!success)
+    if (!success) {
+        cout << "could not open portaudio device name:" << args.hw_name << endl;
         exit(1);
-
+    }
+    cout << "opened portaudio device name:" << args.hw_name << endl;
     instance->prepare_backend();
     instance->activate_audio();
-    instance->start_receive_thread();
     instance->start_dsp_threads();
 }
 
@@ -177,31 +177,38 @@ boost::filesystem::path resolve_home(void)
 #elif defined(__APPLE__)
     path home(getenv("HOME"));
     return home;
+#elif defined(_WIN32)
+    path home(getenv("USERPROFILE"));
+    return home;
 #else
 #error platform not supported
 #endif
 }
 
-void set_plugin_paths(void)
+void set_plugin_paths(server_arguments const & args, nova::sc_ugen_factory * factory)
 {
-    server_arguments const & args = server_arguments::instance();
-
     if (!args.ugen_paths.empty()) {
-        foreach(string const & path, args.ugen_paths)
-            sc_factory->load_plugin_folder(path);
+        for(string const & path : args.ugen_paths)
+            factory->load_plugin_folder(path);
     } else {
-        path home = resolve_home();
-
 #ifdef __linux__
-        sc_factory->load_plugin_folder("/usr/local/lib/supernova/plugins");
-        sc_factory->load_plugin_folder("/usr/lib/supernova/plugins");
-        sc_factory->load_plugin_folder(home / "/.local/share/SuperCollider/supernova_plugins");
-        sc_factory->load_plugin_folder(home / "share/SuperCollider/supernova_plugins");
-#elif defined(__APPLE__)
-        sc_factory->load_plugin_folder(home / "Library/Application Support/SuperCollider/supernova_plugins/");
-        sc_factory->load_plugin_folder("/Library/Application Support/SuperCollider/supernova_plugins/");
+        path home = resolve_home();
+        factory->load_plugin_folder("/usr/local/lib/SuperCollider/plugins");
+        factory->load_plugin_folder("/usr/lib/SuperCollider/plugins");
+        factory->load_plugin_folder(home / "/.local/share/SuperCollider/plugins");
+        factory->load_plugin_folder(home / "share/SuperCollider/plugins");
 #else
-        cerr << "Don't know how to locate plugins on this platform. Please specify search path in command line."
+        char plugin_dir[MAXPATHLEN];
+        sc_GetResourceDirectory(plugin_dir, MAXPATHLEN);
+        sc_AppendToPath(plugin_dir, MAXPATHLEN, "plugins");
+
+        char extension_dir[MAXPATHLEN];
+
+        sc_GetSystemExtensionDirectory(extension_dir, MAXPATHLEN);
+        factory->load_plugin_folder(path(extension_dir) / "plugins");
+
+        sc_GetUserExtensionDirectory(extension_dir, MAXPATHLEN);
+        factory->load_plugin_folder(path(extension_dir) / "plugins");
 #endif
     }
 
@@ -215,20 +222,28 @@ void load_synthdef_folder(nova_server & server, path const & folder, bool verbos
     if (verbose)
         std::printf("Loading synthdefs from path: %s\n", folder.c_str());
 
-#ifdef BOOST_HAS_RVALUE_REFS
     register_synthdefs(server, std::move(sc_read_synthdefs_dir(folder)));
-#else
-    register_synthdefs(server, sc_read_synthdefs_dir(folder));
-#endif
 }
 
 void load_synthdefs(nova_server & server, server_arguments const & args)
 {
+    using namespace std;
+
+#ifndef NDEBUG
+    auto start_time = chrono::high_resolution_clock::now();
+#endif
+
+#ifndef _WIN32
+    const char pathSeparator[] = ":";
+#else
+    const char pathSeparator[] = ";";
+#endif
+
     if (args.load_synthdefs) {
         const char * env_synthdef_path = getenv("SC_SYNTHDEF_PATH");
         vector<path> directories;
         if (env_synthdef_path) {
-            boost::split(directories, env_synthdef_path, boost::is_any_of(":"));
+            boost::split(directories, env_synthdef_path, boost::is_any_of(pathSeparator));
         } else {
             char resourceDir[MAXPATHLEN];
             if(sc_IsStandAlone())
@@ -239,11 +254,15 @@ void load_synthdefs(nova_server & server, server_arguments const & args)
             directories.push_back(path(resourceDir) / "synthdefs");
         }
 
-        foreach(path const & directory, directories)
+        for(path const & directory : directories)
             load_synthdef_folder(server, directory, args.verbosity > 0);
     }
 #ifndef NDEBUG
-    cout << "SynthDefs loaded" << endl;
+    auto end_time = chrono::high_resolution_clock::now();
+    cout << "SynthDefs loaded in "
+         << chrono::duration_cast<chrono::milliseconds>(end_time - start_time).count()
+         << " ms"
+         << endl;
 #endif
 }
 
@@ -262,6 +281,33 @@ void enable_core_dumps(void)
 #endif
 }
 
+void lock_memory(server_arguments const & args)
+{
+#if (_POSIX_MEMLOCK - 0) >=  200112L
+    if (args.memory_locking) {
+        bool lock_memory = false;
+
+        rlimit limit;
+
+        int failure = getrlimit(RLIMIT_MEMLOCK, &limit);
+        if (failure)
+            printf("getrlimit failure\n");
+        else {
+            if (limit.rlim_cur == RLIM_INFINITY and
+                limit.rlim_max == RLIM_INFINITY)
+                lock_memory = true;
+            else
+                printf("memory locking disabled due to resource limiting\n");
+
+            if (lock_memory) {
+                if (mlockall(MCL_FUTURE) != -1)
+                    printf("memory locking enabled.\n");
+            }
+        }
+    }
+#endif
+}
+
 } /* namespace */
 
 int main(int argc, char * argv[])
@@ -272,35 +318,8 @@ int main(int argc, char * argv[])
     server_arguments::initialize(argc, argv);
     server_arguments const & args = server_arguments::instance();
 
-#if (_POSIX_MEMLOCK - 0) >=  200112L
-    if (args.memory_locking)
-    {
-        bool lock_memory = false;
-
-        rlimit limit;
-
-        int failure = getrlimit(RLIMIT_MEMLOCK, &limit);
-        if (failure)
-            printf("getrlimit failure\n");
-        else
-        {
-            if (limit.rlim_cur == RLIM_INFINITY and
-                limit.rlim_max == RLIM_INFINITY)
-                lock_memory = true;
-            else
-                printf("memory locking disabled due to resource limiting\n");
-
-            if (lock_memory)
-            {
-                if (mlockall(MCL_FUTURE) != -1)
-                    printf("memory locking enabled.\n");
-            }
-        }
-    }
-#endif
-
-
     rt_pool.init(args.rt_pool_size * 1024, args.memory_locking);
+    lock_memory(args);
 
     cout << "Supernova booting" << endl;
 #ifndef NDEBUG
@@ -309,9 +328,9 @@ int main(int argc, char * argv[])
 
     server_shared_memory_creator::cleanup(args.port());
     nova_server server(args);
-    register_handles();
+    register_signal_handler();
 
-    set_plugin_paths();
+    set_plugin_paths(args, sc_factory);
     load_synthdefs(server, args);
 
     if (!args.non_rt) {

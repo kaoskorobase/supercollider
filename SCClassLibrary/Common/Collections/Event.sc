@@ -250,25 +250,27 @@ Event : Environment {
 					// assembles a synth control list from event values
 
 				getMsgFunc: { |instrument|
-					var	synthLib, synthDesc, desc;
+					var	synthLib, desc;
 						// if user specifies a msgFunc, prefer user's choice
 					if(~msgFunc.isNil) {
-						instrument = ~instrument = instrument.asSymbol;
+						instrument = ~instrument = instrument.asDefName;
+
 						synthLib = ~synthLib ?? { SynthDescLib.global };
-						synthDesc = desc = synthLib.at(instrument);
+						desc = synthLib.at(instrument);
 						if (desc.notNil) {
 							~hasGate = desc.hasGate;
 							~msgFunc = desc.msgFunc;
-						}{
+						} {
 							~msgFunc = ~defaultMsgFunc;
 						};
 					} { ~msgFunc };
 				},
 				synthDefName: { |instrument, variant, synthDesc|
 						// allow `nil to cancel a variant in a pattern
+					instrument = instrument.asDefName;
 					variant = variant.dereference;
 					if(variant.notNil and: { synthDesc.notNil and: { synthDesc.hasVariants } })
-						{ (instrument ++ "." ++ variant).asSymbol }
+						{ "%.%".format(instrument, variant).asSymbol }
 						{ instrument.asSymbol };
 				},
 
@@ -614,6 +616,7 @@ Event : Environment {
 						if (freqs.isRest.not) {
 							~freq = freqs;
 							~amp = ~amp.value;
+							~isPlaying = true;
 							msgFunc = ~getMsgFunc.valueEnvir;
 							instrumentName = ~synthDefName.valueEnvir;
 							bndl = msgFunc.valueEnvir;
@@ -668,7 +671,8 @@ Event : Environment {
 						} {
 							~schedBundleArray.value(~lag, ~timingOffset, server,
 								[\n_free, ~id.asControlInput].flop)
-						}
+						};
+						~isPlaying = false;
 					},
 
 					kill: #{|server|
@@ -968,12 +972,12 @@ Event : Environment {
 				group = ~group.asControlInput;
 				addAction = Node.actionNumberFor(~addAction);
 				synthLib = ~synthLib ?? { SynthDescLib.global };
-				instrumentName = ~instrument.asSymbol;
+				instrumentName = ~instrument.asDefName;
 				desc = synthLib.synthDescs[instrumentName];
 				if (desc.notNil) {
 					msgFunc = desc.msgFunc;
 					~hasGate = desc.hasGate;
-				}{
+				} {
 					msgFunc = ~defaultMsgFunc;
 				};
 
@@ -993,7 +997,6 @@ Event : Environment {
 					server.sendBundle(server.latency ? 0 + ~lag, *bndl);
 				} {
 					server.sendBundle(server.latency, *bndl);
-
 				};
 				~id = ids;
 				~isPlaying = true;

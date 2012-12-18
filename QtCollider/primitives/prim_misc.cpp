@@ -22,7 +22,7 @@
 #include "primitives.h"
 
 #include "../Common.h"
-#include "../Slot.h"
+#include "../type_codec.hpp"
 #include "../QcApplication.h"
 #include "../QObjectProxy.h"
 #include "../style/style.hpp"
@@ -34,9 +34,10 @@
 
 #include <PyrKernel.h>
 
+#include <QFontDatabase>
+#include <QFontInfo>
 #include <QFontMetrics>
 #include <QDesktopWidget>
-#include <QFontDatabase>
 #include <QStyleFactory>
 #include <QWebSettings>
 
@@ -44,7 +45,7 @@ namespace QtCollider {
 
 QC_LANG_PRIMITIVE( QtGUI_SetDebugLevel, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QtCollider::setDebugLevel( Slot::toInt(a) );
+  QtCollider::setDebugLevel( QtCollider::get(a) );
   return errNone;
 }
 
@@ -59,7 +60,7 @@ QC_LANG_PRIMITIVE( QWindow_ScreenBounds, 0, PyrSlot *r, PyrSlot *a, VMGlobals *g
   if( !QcApplication::compareThread() ) return QtCollider::wrongThreadError();
 
   QRect screenGeometry = QApplication::desktop()->screenGeometry();
-  Slot::setRect( r, screenGeometry );
+  QtCollider::set( r, screenGeometry );
   return errNone;
 }
 
@@ -68,15 +69,15 @@ QC_LANG_PRIMITIVE( QWindow_AvailableGeometry, 0, PyrSlot *r, PyrSlot *a, VMGloba
   if( !QcApplication::compareThread() ) return QtCollider::wrongThreadError();
 
   QRect rect = QApplication::desktop()->availableGeometry();
-  Slot::setRect( r, rect );
+  QtCollider::set( r, rect );
   return errNone;
 }
 
 QC_LANG_PRIMITIVE( Qt_StringBounds, 2, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
-  QString str = Slot::toString( a );
+  QString str = QtCollider::get( a );
 
-  QFont f = Slot::toFont( a+1 );
+  QFont f = QtCollider::get( a+1 );
 
   QFontMetrics fm( f );
   QRect bounds = fm.boundingRect( str );
@@ -84,19 +85,73 @@ QC_LANG_PRIMITIVE( Qt_StringBounds, 2, PyrSlot *r, PyrSlot *a, VMGlobals *g )
   // we keep the font height even on empty string;
   if( str.isEmpty() ) bounds.setHeight( fm.height() );
 
-  Slot::setRect( r, bounds );
+  QtCollider::set( r, bounds );
   return errNone;
 }
 
 QC_LANG_PRIMITIVE( Qt_AvailableFonts, 0, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
   QFontDatabase database;
-  VariantList l;
-  Q_FOREACH( QString family, database.families() ) {
-    l.data << QVariant(family);
-  }
-  Slot::setVariantList( r, l );
+  QVariantList list;
+  Q_FOREACH( QString family, database.families() )
+      list << family;
+  QtCollider::set( r, list );
   return errNone;
+}
+
+QC_LANG_PRIMITIVE( QFont_SetDefaultFont, 2, PyrSlot *r, PyrSlot *a, VMGlobals *g )
+{
+    if( !QcApplication::compareThread() ) return QtCollider::wrongThreadError();
+
+    if ( !isKindOfSlot( a+0, SC_CLASS(QFont) ) )
+        return errWrongType;
+
+    QFont font( QtCollider::read<QFont>(a+0) );
+    const char *className = IsSym(a+1) ? slotRawSymbol(a+1)->name : 0;
+
+    QApplication::setFont( font, className );
+
+    return errNone;
+}
+
+QC_LANG_PRIMITIVE( QFont_DefaultFamilyForStyle, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
+{
+    // NOTE:
+    // On X11 systems we rely on default fontconfig mappings of font familiy names,
+    // as style hints are not necessarily supported.
+    // On other systems, style hints should work.
+
+    if( !QcApplication::compareThread() ) return QtCollider::wrongThreadError();
+
+    if ( !IsInt(a) )
+        return errWrongType;
+
+    QFont::StyleHint styleHint;
+    QString family;
+    switch (slotRawInt(a)) {
+    case 0:
+        styleHint = QFont::SansSerif;
+        family = "sans-serif";
+        break;
+    case 1:
+        styleHint = QFont::Serif;
+        family = "serif";
+        break;
+    case 2:
+        styleHint = QFont::TypeWriter;
+        family = "monospace";
+        break;
+    default:
+        styleHint = QFont::AnyStyle;
+    }
+
+    QFont font(family);
+    font.setStyleHint(styleHint);
+
+    QFontInfo fontInfo(font);
+    QtCollider::set( r, fontInfo.family() );
+
+    return errNone;
 }
 
 QC_LANG_PRIMITIVE( Qt_GlobalPalette, 0, PyrSlot *r, PyrSlot *a, VMGlobals *g )
@@ -104,7 +159,7 @@ QC_LANG_PRIMITIVE( Qt_GlobalPalette, 0, PyrSlot *r, PyrSlot *a, VMGlobals *g )
   if( !QcApplication::compareThread() ) return QtCollider::wrongThreadError();
 
   QPalette p( QApplication::palette() );
-  Slot::setPalette( r, p );
+  QtCollider::set( r, p );
   return errNone;
 }
 
@@ -112,7 +167,7 @@ QC_LANG_PRIMITIVE( Qt_SetGlobalPalette, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g 
 {
   if( !QcApplication::compareThread() ) return QtCollider::wrongThreadError();
 
-  QPalette p = Slot::toPalette( a );
+  QPalette p = QtCollider::get( a );
   QApplication::setPalette( p );
 
   return errNone;
@@ -147,7 +202,7 @@ QC_LANG_PRIMITIVE( Qt_SetStyle, 1, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
   if( !QcApplication::compareThread() ) return QtCollider::wrongThreadError();
 
-  QString str = Slot::toString( a );
+  QString str = QtCollider::get( a );
   if( str.isEmpty() ) return errFailed;
 
   QStyle *style = QStyleFactory::create( str );
@@ -161,12 +216,11 @@ QC_LANG_PRIMITIVE( Qt_AvailableStyles, 0, PyrSlot *r, PyrSlot *a, VMGlobals *g )
 {
   if( !QcApplication::compareThread() ) return QtCollider::wrongThreadError();
 
-  VariantList list;
-  Q_FOREACH( QString key, QStyleFactory::keys() ) {
-    list.data << QVariant(key);
-  }
+  QVariantList list;
+  Q_FOREACH( QString key, QStyleFactory::keys() )
+      list << key;
 
-  Slot::setVariantList( r, list );
+  QtCollider::set( r, list );
   return errNone;
 }
 
@@ -219,6 +273,8 @@ void defineMiscPrimitives()
   definer.define<QWindow_AvailableGeometry>();
   definer.define<Qt_StringBounds>();
   definer.define<Qt_AvailableFonts>();
+  definer.define<QFont_SetDefaultFont>();
+  definer.define<QFont_DefaultFamilyForStyle>();
   definer.define<Qt_GlobalPalette>();
   definer.define<Qt_SetGlobalPalette>();
   definer.define<Qt_FocusWidget>();

@@ -20,20 +20,24 @@
 ************************************************************************/
 
 #include "../QcHelper.h"
+#include "../Common.h"
 #include <QListWidget>
 
 class QcListWidget : public QListWidget, QcHelper
 {
   Q_OBJECT
-  Q_PROPERTY( VariantList items READ dummyVariantList WRITE setItems );
-  Q_PROPERTY( VariantList colors READ dummyVariantList WRITE setColors );
+  Q_PROPERTY( QVariantList items READ dummyVariantList WRITE setItems );
+  Q_PROPERTY( QVariantList colors READ dummyVariantList WRITE setColors );
   Q_PROPERTY( int currentRow READ currentRow WRITE setCurrentRowWithoutAction )
+    Q_PROPERTY( QVariantList selection READ selection );
 
   public:
     QcListWidget();
-    void setItems( const VariantList & );
-    void setColors( const VariantList & ) const;
+    void setItems( const QVariantList & );
+    void setColors( const QVariantList & ) const;
     void setCurrentRowWithoutAction( int );
+    QVariantList selection() const;
+
   Q_SIGNALS:
     void action();
     void returnPressed();

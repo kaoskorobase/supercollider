@@ -26,6 +26,7 @@
 #include <ctype.h>
 #include <stdexcept>
 #include <stdarg.h>
+#include <cerrno>
 
 #include <sys/types.h>
 #include "OSC_Packet.h"
@@ -36,15 +37,12 @@
 	# define bzero( ptr, count ) memset( ptr, 0, count )
 #else
 	#include <netinet/tcp.h>
+	#include <sys/types.h>
+	#include <sys/socket.h>
 #endif
 
-#if defined(__linux__) || defined(__FreeBSD__)
-	#include <errno.h>
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__)
 	#include <unistd.h>
-#endif
-
-#if defined(SC_IPHONE) || defined(__APPLE__)
-	#include <errno.h>
 #endif
 
 #ifdef USE_RENDEZVOUS
@@ -167,19 +165,20 @@ int recvall(int socket, void *msg, size_t len);
 int sendallto(int socket, const void *msg, size_t len, struct sockaddr *toaddr, int addrlen);
 int sendall(int socket, const void *msg, size_t len);
 
-void dumpOSCmsg(int inSize, char* inData)
+static bool dumpOSCmsg(int inSize, char* inData)
 {
 	int size;
 	const char *data;
 
 	if (inData[0]) {
-		char *addr = inData;
+		const char *addr = inData;
+		if (strcmp(addr, "/status") == 0) // skip /status messages
+			return false;
+
 		data = OSCstrskip(inData);
 		size = inSize - (data - inData);
 		scprintf("[ \"%s\",", addr);
-	}
-	else
-	{
+	} else {
 		scprintf("[ %d,", OSCint(inData));
 		data = inData + 4;
 		size = inSize - 4;
@@ -224,6 +223,7 @@ void dumpOSCmsg(int inSize, char* inData)
 	}
 leave:
 	scprintf(" ]");
+	return true;
 }
 
 void hexdump(int size, char* data)
@@ -262,7 +262,7 @@ void hexdump(int size, char* data)
 	scprintf("\n");
 }
 
-void dumpOSC(int mode, int size, char* inData)
+static void dumpOSC(int mode, int size, char* inData)
 {
 	if (mode & 1)
 	{
@@ -284,8 +284,9 @@ void dumpOSC(int mode, int size, char* inData)
 		}
 		else
 		{
-			dumpOSCmsg(size, inData);
-			scprintf("\n");
+			bool contentPrinted = dumpOSCmsg(size, inData);
+			if (contentPrinted)
+				scprintf("\n");
 		}
 	}
 

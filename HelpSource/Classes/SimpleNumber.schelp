@@ -268,6 +268,11 @@ code::
 (a - clip2(a,b))
 ::
 
+method:: madd
+code::
+this * a + b
+::
+
 subsection:: testing
 method:: isPositive
 Answer if the number is >= 0.
@@ -857,6 +862,7 @@ returns:: A random number from -this to +this that is the result of summing thre
 
 method:: exprand
 an exponentially distributed random number in the interval ]a, b[. This is always a link::Classes/Float::.
+(Note that the distribution of numbers is not exactly an EMPHASIS::exponential distribution::, since that would be unbounded: we might call it a EMPHASIS::logarithmic uniform distribution::.)
 argument::aNumber
 the upper limit
 argument::adverb
@@ -883,6 +889,15 @@ code::
 75.partition(8, 3);
 75.partition(75, 1);
 ::
+
+
+subsection:: UGen Compatibility Methods
+
+Some methods to ease the development of generic ugen code.
+
+method:: lag, lag2, lag3, lagud, lag2ud, lag3ud, slew, varlag
+
+returns:: code::this::
 
 
 subsection:: misc

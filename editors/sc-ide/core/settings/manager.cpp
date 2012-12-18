@@ -21,9 +21,9 @@
 #include "manager.hpp"
 #include "serialization.hpp"
 
-#include <QTextCharFormat>
-#include <QPalette>
 #include <QApplication>
+#include <QPalette>
+#include <QTextCharFormat>
 
 namespace ScIDE { namespace Settings {
 
@@ -40,30 +40,49 @@ void Manager::initDefaults()
 
     beginGroup("IDE");
 
+    setDefault("startWithSession", "last");
+
     beginGroup("interpreter");
     setDefault("autoStart", true);
-    setDefault("command", "sclang");
     endGroup();
+
+    setDefault("postWindow/scrollback", 1000);
 
     beginGroup("editor");
 
-    setDefault("spaceIndent", true);
+    setDefault("spaceIndent", false);
     setDefault("indentWidth", 4);
     setDefault("stepForwardEvaluation", false);
+    setDefault("lineWrap", true);
 
-    QFont fnt(QApplication::font());
-    fnt.setFamily("monospace");
-    fnt.setStyleHint(QFont::TypeWriter);
-    setDefault("font", fnt.toString());
+    setDefault("blinkDuration", 600);
+
+    setDefault("font/family", "monospace");
+    setDefault("font/antialias", true);
 
     beginGroup("colors");
-    setDefault("background", appPlt.color(QPalette::Base));
-    setDefault("text", appPlt.color(QPalette::Text));
-    setDefault("matchingBrackets", Qt::gray);
-    setDefault("evaluatedCodeBackground", QColor("#F8A200"));
-    setDefault("evaluatedCodeText", Qt::black);
-    setDefault("lineNumbersBackground", appPlt.color(QPalette::Button));
-    setDefault("lineNumbers", appPlt.color(QPalette::ButtonText));
+
+    QTextCharFormat matchingBracketsFormat;
+    matchingBracketsFormat.setForeground(Qt::red);
+    matchingBracketsFormat.setBackground(QColor("#ffff7f"));
+    matchingBracketsFormat.setFontWeight(QFont::Bold);
+    setDefault("matchingBrackets", QVariant::fromValue(matchingBracketsFormat));
+
+    QTextCharFormat bracketMismatchFormat;
+    bracketMismatchFormat.setBackground(QColor(150,0,0));
+    bracketMismatchFormat.setForeground(Qt::white);
+    setDefault("mismatchedBrackets", QVariant::fromValue(bracketMismatchFormat));
+
+    QTextCharFormat evaluatedCodeFormat;
+    evaluatedCodeFormat.setBackground(QColor("#F8A200"));
+    evaluatedCodeFormat.setForeground(Qt::black);
+    setDefault("evaluatedCode", QVariant::fromValue(evaluatedCodeFormat));
+
+    QTextCharFormat searchResultFormat;
+    searchResultFormat.setBackground(appPlt.color(QPalette::Highlight).darker(200));
+    searchResultFormat.setForeground(appPlt.color(QPalette::HighlightedText).darker(200));
+    setDefault("searchResult", QVariant::fromValue(searchResultFormat));
+
     endGroup(); // colors
 
     beginGroup("highlighting");
@@ -71,30 +90,6 @@ void Manager::initDefaults()
     endGroup(); // highlighting
 
     endGroup(); // editor
-
-    beginGroup("shortcuts");
-    setDefault("cmdLineFocus", tr("Ctrl+Tab", "Toggle command line focus"));
-    setDefault("quit", tr("Ctrl+Q", "Quit application"));
-    setDefault("evaluateSelection", tr("Ctrl+Return", "Evaluate selection"));
-    setDefault("evaluateRegion", tr("Alt+Return", "Evaluate region"));
-    setDefault("stopMain", tr("Ctrl+.", "Stop Main (a.k.a. cmd-period)"));
-    setDefault("helpForSelection", tr("Ctrl+H", "Help for selection"));
-    setDefault("newDocument", tr("Ctrl+N", "New document"));
-    setDefault("openDocument", tr("Ctrl+O", "Open document"));
-    setDefault("saveDocument", tr("Ctrl+S", "Save document"));
-    setDefault("closeDocument", tr("Ctrl+W", "Close document"));
-    setDefault("undo", tr("Ctrl+Z", "Undo"));
-    setDefault("redo", tr("Ctrl+Shift+Z", "Redo"));
-    setDefault("cut", tr("Ctrl+X", "Cut"));
-    setDefault("copy", tr("Ctrl+C", "Copy"));
-    setDefault("paste", tr("Ctrl+V", "Paste"));
-    setDefault("find", tr("Ctrl+F", "Find"));
-    setDefault("replace", tr("Ctrl+R", "Replace"));
-    setDefault("hideToolPanel", tr("Esc", "Hide tool panel"));
-    setDefault("enlargeFont", tr("Ctrl++", "Enlarge font"));
-    setDefault("shrinkFont", tr("Ctrl+-", "Shrink font"));
-    setDefault("openDefinition", tr("Ctrl+D", "Open definition"));
-    endGroup(); // shortcuts
 
     endGroup(); // IDE
 }
@@ -116,8 +111,8 @@ void Manager::initHighlightingDefaults()
     int shade = (base.red() + base.green() + base.blue() < 380) ? 160 : 100;
 
     setDefault( "keyword", makeHlFormat( QColor(0,0,230).lighter(shade), QFont::Bold ) );
-    setDefault( "builtin", makeHlFormat( QColor(51,51,191).lighter(shade) ) );
-    setDefault( "envvar", makeHlFormat( QColor(255,102,0).lighter(shade) ) );
+    setDefault( "built-in", makeHlFormat( QColor(51,51,191).lighter(shade) ) );
+    setDefault( "env-var", makeHlFormat( QColor(140,70,20).lighter(shade) ) );
     setDefault( "class", makeHlFormat( QColor(0,0,210).lighter(shade) ) );
     setDefault( "number", makeHlFormat( QColor(152,0,153).lighter(shade) ) );
     setDefault( "symbol", makeHlFormat( QColor(0,115,0).lighter(shade) ) );
@@ -151,6 +146,55 @@ void Manager::setValue ( const QString & key, const QVariant & value )
 QKeySequence Manager::shortcut( const QString & key )
 {
     return QKeySequence( value(key).toString() );
+}
+
+void Manager::addAction ( QAction *action, const QString &key, const QString &category )
+{
+    ActionData actionData;
+    actionData.category = category;
+    actionData.key = key;
+
+    if (action->data().isValid()) {
+        qWarning( "Settings::Manager: action '%s' of class '%s' has data."
+                  " It will be overridden for settings purposes!",
+                  qPrintable(action->text()),
+                  action->parent()->metaObject()->className() );
+    }
+
+    action->setData( QVariant::fromValue(actionData) );
+
+    mActions.append(action);
+
+    beginGroup("IDE/shortcuts");
+
+    setDefault( actionData.key, QVariant::fromValue(action->shortcut()) );
+    action->setShortcut( value(actionData.key).value<QKeySequence>() );
+
+    endGroup();
+}
+
+QString Manager::keyForAction ( QAction *action )
+{
+    ActionData actionData = action->data().value<ActionData>();
+    return actionData.key;
+}
+
+QFont Manager::codeFont()
+{
+    QString fontFamily = value("IDE/editor/font/family").toString();
+    int fontSize = value("IDE/editor/font/size").toInt();
+    bool fontAntialas = value("IDE/editor/font/antialias").toBool();
+
+    QFont font = QApplication::font("QPlainTextEdit");
+    font.setStyleHint(QFont::TypeWriter);
+    font.setFamily(fontFamily);
+    if (fontSize > 0)
+        font.setPointSize(fontSize);
+
+    if (!fontAntialas)
+        font.setStyleStrategy(QFont::StyleStrategy(font.styleStrategy() | QFont::NoAntialias));
+
+    return font;
 }
 
 }} // namespace ScIDE::Settings

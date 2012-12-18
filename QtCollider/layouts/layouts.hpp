@@ -22,7 +22,10 @@
 #ifndef QC_LAYOUTS_H
 #define QC_LAYOUTS_H
 
+#include "stack_layout.hpp"
+#include "../Common.h"
 #include "../QcObjectFactory.h"
+#include "../QObjectProxy.h"
 
 #include <QHBoxLayout>
 #include <QVBoxLayout>
@@ -32,14 +35,13 @@
 template <class LAYOUT> struct QcLayout : public LAYOUT
 {
 public:
-  VariantList margins() const { return VariantList(); }
+  QVariantList margins() const { return QVariantList(); }
 
-  void setMargins( const VariantList &list ) {
-    if( list.data.size() < 4 ) return;
+  void setMargins( const QVariantList &list ) {
+    if( list.size() < 4 ) return;
     int m[4];
-    for( int i=0; i<4; ++i ) {
-      m[i] = list.data[i].value<int>();
-    }
+    for( int i=0; i<4; ++i )
+      m[i] = list[i].toInt();
     LAYOUT::setContentsMargins( m[0], m[1], m[2], m[3] );
   }
 };
@@ -49,20 +51,20 @@ template <class BOXLAYOUT> class QcBoxLayout : public QcLayout<BOXLAYOUT>
 public:
   QcBoxLayout() {}
 
-  QcBoxLayout( const VariantList & items ) {
-    Q_FOREACH( QVariant v, items.data ) {
-      VariantList item = v.value<VariantList>();
+  QcBoxLayout( const QVariantList & items ) {
+    Q_FOREACH( const QVariant &var, items ) {
+      QVariantList item = var.toList();
       addItem( item );
     }
   }
 
-  void addItem( const VariantList & item ) {
-    if( item.data.size() < 3 ) return;
+  void addItem( const QVariantList & item ) {
+    if( item.size() < 3 ) return;
 
-    int stretch = item.data[1].toInt();
-    Qt::Alignment alignment = (Qt::Alignment) item.data[2].toInt();
+    int stretch = item[1].toInt();
+    Qt::Alignment alignment = (Qt::Alignment) item[2].toInt();
 
-    QVariant varObject = item.data[0];
+    const QVariant & varObject = item[0];
 
     if( !varObject.isValid() ) {
       BOXLAYOUT::addStretch( stretch );
@@ -91,14 +93,14 @@ public:
     }
   }
 
-  void insertItem( const VariantList & item ) {
-    if( item.data.size() < 4 ) return;
+  void insertItem( const QVariantList & item ) {
+    if( item.size() < 4 ) return;
 
-    int index = item.data[1].toInt();
-    int stretch = item.data[2].toInt();
-    Qt::Alignment alignment = (Qt::Alignment) item.data[3].toInt();
+    int index = item[1].toInt();
+    int stretch = item[2].toInt();
+    Qt::Alignment alignment = (Qt::Alignment) item[3].toInt();
 
-    QVariant varObject = item.data[0];
+    const QVariant & varObject = item[0];
 
     if( !varObject.isValid() ) {
       BOXLAYOUT::insertStretch( index, stretch );
@@ -159,12 +161,12 @@ public:
 class QcHBoxLayout : public QcBoxLayout<QHBoxLayout>
 {
   Q_OBJECT
-  Q_PROPERTY( VariantList margins READ margins WRITE setMargins )
+  Q_PROPERTY( QVariantList margins READ margins WRITE setMargins )
 public:
   QcHBoxLayout() {}
-  Q_INVOKABLE QcHBoxLayout( const VariantList &items ): QcBoxLayout<QHBoxLayout>(items) {}
-  Q_INVOKABLE void addItem( const VariantList &data ) { QcBoxLayout<QHBoxLayout>::addItem(data); }
-  Q_INVOKABLE void insertItem( const VariantList &data ) { QcBoxLayout<QHBoxLayout>::insertItem(data); }
+  Q_INVOKABLE QcHBoxLayout( const QVariantList &items ): QcBoxLayout<QHBoxLayout>(items) {}
+  Q_INVOKABLE void addItem( const QVariantList &data ) { QcBoxLayout<QHBoxLayout>::addItem(data); }
+  Q_INVOKABLE void insertItem( const QVariantList &data ) { QcBoxLayout<QHBoxLayout>::insertItem(data); }
   Q_INVOKABLE void setStretch( int index, int stretch ) {
     QBoxLayout::setStretch( index, stretch );
   }
@@ -183,12 +185,12 @@ public:
 class QcVBoxLayout : public QcBoxLayout<QVBoxLayout>
 {
   Q_OBJECT
-  Q_PROPERTY( VariantList margins READ margins WRITE setMargins )
+  Q_PROPERTY( QVariantList margins READ margins WRITE setMargins )
 public:
   QcVBoxLayout() {}
-  Q_INVOKABLE QcVBoxLayout( const VariantList &items ): QcBoxLayout<QVBoxLayout>(items) {}
-  Q_INVOKABLE void addItem( const VariantList &data ) { QcBoxLayout<QVBoxLayout>::addItem(data); }
-  Q_INVOKABLE void insertItem( const VariantList &data ) { QcBoxLayout<QVBoxLayout>::insertItem(data); }
+  Q_INVOKABLE QcVBoxLayout( const QVariantList &items ): QcBoxLayout<QVBoxLayout>(items) {}
+  Q_INVOKABLE void addItem( const QVariantList &data ) { QcBoxLayout<QVBoxLayout>::addItem(data); }
+  Q_INVOKABLE void insertItem( const QVariantList &data ) { QcBoxLayout<QVBoxLayout>::insertItem(data); }
   Q_INVOKABLE void setStretch( int index, int stretch ) {
     QBoxLayout::setStretch( index, stretch );
   }
@@ -207,11 +209,11 @@ public:
 class QcGridLayout : public QcLayout<QGridLayout>
 {
   Q_OBJECT
-  Q_PROPERTY( VariantList margins READ margins WRITE setMargins )
+  Q_PROPERTY( QVariantList margins READ margins WRITE setMargins )
   Q_PROPERTY( int verticalSpacing READ verticalSpacing WRITE setVerticalSpacing )
   Q_PROPERTY( int horizontalSpacing READ horizontalSpacing WRITE setHorizontalSpacing )
 public:
-  Q_INVOKABLE void addItem( const VariantList &dataList );
+  Q_INVOKABLE void addItem( const QVariantList &dataList );
   Q_INVOKABLE void setRowStretch( int row, int factor ) {
     QcLayout<QGridLayout>::setRowStretch( row, factor );
   }
@@ -249,6 +251,31 @@ public:
   }
   Q_INVOKABLE void setMinColumnWidth( int col, int w ) {
     setColumnMinimumWidth( col, w );
+  }
+};
+
+class QcStackLayout : public QcLayout<QtCollider::StackLayout>
+{
+  Q_OBJECT
+  Q_PROPERTY( QVariantList margins READ margins WRITE setMargins )
+
+public:
+  QcStackLayout() {}
+
+  Q_INVOKABLE QcStackLayout( const QVariantList &items )
+  {
+    Q_FOREACH(const QVariant & var, items) {
+      QObjectProxy *p = var.value<QObjectProxy*>();
+      if(!p) return;
+      QWidget *w = qobject_cast<QWidget*>( p->object() );
+      if(w) addWidget(w);
+    }
+  }
+
+  Q_INVOKABLE void insertWidget( int index, QObjectProxy *proxy )
+  {
+    if (QWidget *w = qobject_cast<QWidget*>( proxy->object() ))
+      QtCollider::StackLayout::insertWidget(index, w);
   }
 };
 
